@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useCallback, useState } from "react";
-import p5 from "p5";
 
 interface LatencyCanvasProps {
   networkLatency?: number;

@@ -1,61 +1,124 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { useAptosStream, BlockStats } from "@/hooks/useAptosStream";
 
-interface Block {
-  id: number;
+interface GridBlock {
+  blockHeight: number;
   timestamp: number;
   txCount: number;
 }
 
-// Color based on transaction count (like miniblocks)
+// Color based on transaction count - more granular gradient
 function getBlockColor(txCount: number): string {
   if (txCount === 0) return "#1e1e22";
-  if (txCount < 20) return "#1a4d3a";
-  if (txCount < 50) return "#00875a";
-  if (txCount < 100) return "#00a86b";
-  if (txCount < 150) return "#00c77b";
-  return "#00d9a5";
+  if (txCount === 1) return "#1a3020";
+  if (txCount <= 3) return "#1a3d2a";
+  if (txCount <= 5) return "#1a4530";
+  if (txCount <= 10) return "#1a4d3a";
+  if (txCount <= 20) return "#00704a";
+  if (txCount <= 30) return "#00875a";
+  if (txCount <= 50) return "#00a86b";
+  if (txCount <= 80) return "#00c77b";
+  if (txCount <= 120) return "#00d98a";
+  return "#00f5a0"; // Bright for 120+ tx
+}
+
+// Get text color that contrasts with block color
+function getTextColor(txCount: number): string {
+  if (txCount <= 10) return "rgba(255, 255, 255, 0.5)";
+  return "rgba(0, 0, 0, 0.7)";
 }
 
 export function BlockStream() {
+  const { stats, connected } = useAptosStream();
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const blocksRef = useRef<Block[][]>([]);
-  const blockIdRef = useRef(0);
-  const colIndexRef = useRef(0);
+  const gridRef = useRef<GridBlock[][]>([]);
   const animationRef = useRef<number>(0);
-  const lastStatUpdateRef = useRef<number>(0);
-
-  // Stable stats - only update every 500ms to prevent flickering
-  const [stats, setStats] = useState({
-    blockHeight: 0,
-    tps: 1200,
-  });
+  const lastBlockHeightRef = useRef<number>(0);
+  const gridIndexRef = useRef<number>(0);
+  const mouseRef = useRef({ x: 0, y: 0 });
+  const [hoveredBlock, setHoveredBlock] = useState<GridBlock | null>(null);
 
   const COLS = 50;
   const ROWS = 8;
 
+  // Initialize grid
+  useEffect(() => {
+    for (let r = 0; r < ROWS; r++) {
+      gridRef.current[r] = [];
+      for (let c = 0; c < COLS; c++) {
+        gridRef.current[r][c] = { blockHeight: 0, timestamp: 0, txCount: 0 };
+      }
+    }
+  }, []);
+
+  // Handle new blocks from stream
+  useEffect(() => {
+    if (stats.recentBlocks.length === 0) return;
+
+    // Find new blocks we haven't processed yet
+    const newBlocks = stats.recentBlocks.filter(
+      (b) => b.blockHeight > lastBlockHeightRef.current
+    );
+
+    if (newBlocks.length === 0) return;
+
+    // Update last seen block height
+    lastBlockHeightRef.current = Math.max(...newBlocks.map((b) => b.blockHeight));
+
+    // Add new blocks to grid (oldest first)
+    const sortedBlocks = [...newBlocks].sort((a, b) => a.blockHeight - b.blockHeight);
+
+    for (const block of sortedBlocks) {
+      const row = gridIndexRef.current % ROWS;
+      const col = Math.floor(gridIndexRef.current / ROWS) % COLS;
+
+      gridRef.current[row][col] = {
+        blockHeight: block.blockHeight,
+        timestamp: Date.now(),
+        txCount: block.txCount,
+      };
+
+      gridIndexRef.current = (gridIndexRef.current + 1) % (ROWS * COLS);
+    }
+  }, [stats.recentBlocks]);
+
+  // Canvas rendering
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
 
-    // Initialize grid
-    for (let r = 0; r < ROWS; r++) {
-      blocksRef.current[r] = [];
-      for (let c = 0; c < COLS; c++) {
-        blocksRef.current[r][c] = { id: 0, timestamp: 0, txCount: 0 };
-      }
-    }
-
     const canvas = document.createElement("canvas");
     canvas.style.display = "block";
+    canvas.style.cursor = "crosshair";
     container.appendChild(canvas);
     canvasRef.current = canvas;
 
+    // Mouse tracking for hover
+    const handleMouseMove = (e: MouseEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      mouseRef.current = {
+        x: e.clientX - rect.left,
+        y: e.clientY - rect.top,
+      };
+    };
+    canvas.addEventListener("mousemove", handleMouseMove);
+
     let lastResize = 0;
-    const draw = () => {
+    let lastFrame = 0;
+    const targetFPS = 24;
+    const frameInterval = 1000 / targetFPS;
+
+    const draw = (timestamp: number) => {
       if (!canvas || !container) return;
+
+      if (timestamp - lastFrame < frameInterval) {
+        animationRef.current = requestAnimationFrame(draw);
+        return;
+      }
+      lastFrame = timestamp;
 
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
@@ -66,7 +129,6 @@ export function BlockStream() {
       const width = rect.width;
       const height = rect.height;
 
-      // Only resize occasionally
       if (now - lastResize > 200) {
         if (canvas.width !== Math.floor(width * dpr) || canvas.height !== Math.floor(height * dpr)) {
           canvas.width = Math.floor(width * dpr);
@@ -86,16 +148,19 @@ export function BlockStream() {
       const cellH = height / ROWS;
       const gap = 1;
 
+      // Find hovered cell
+      const hoveredCol = Math.floor(mouseRef.current.x / cellW);
+      const hoveredRow = Math.floor(mouseRef.current.y / cellH);
+      let currentHovered: GridBlock | null = null;
+
       // Draw blocks
       for (let r = 0; r < ROWS; r++) {
         for (let c = 0; c < COLS; c++) {
-          const block = blocksRef.current[r]?.[c];
-          if (!block || block.timestamp === 0) continue;
-
-          const age = (now - block.timestamp) / 1000;
-          let alpha = 1;
-          if (age > 4) {
-            alpha = Math.max(0.15, 1 - (age - 4) / 6);
+          const block = gridRef.current[r]?.[c];
+          if (!block || block.timestamp === 0) {
+            ctx.fillStyle = "#1a1a1d";
+            ctx.fillRect(c * cellW + gap, r * cellH + gap, cellW - gap * 2, cellH - gap * 2);
+            continue;
           }
 
           const x = c * cellW + gap;
@@ -103,57 +168,56 @@ export function BlockStream() {
           const w = cellW - gap * 2;
           const h = cellH - gap * 2;
 
-          ctx.globalAlpha = alpha;
+          const isHovered = r === hoveredRow && c === hoveredCol;
+          if (isHovered) currentHovered = block;
+
+          // Block color based on tx count
           ctx.fillStyle = getBlockColor(block.txCount);
           ctx.fillRect(x, y, w, h);
 
-          // Glow on new blocks
-          if (age < 0.2) {
-            ctx.fillStyle = "rgba(0, 217, 165, 0.4)";
-            ctx.fillRect(x, y, w, h);
+          // Show tx count inside block if there's space
+          if (w >= 12 && h >= 10 && block.txCount > 0) {
+            ctx.fillStyle = getTextColor(block.txCount);
+            ctx.font = `bold ${Math.min(9, h - 4)}px monospace`;
+            ctx.textAlign = "center";
+            ctx.textBaseline = "middle";
+            ctx.fillText(String(block.txCount), x + w / 2, y + h / 2);
+          }
+
+          // Highlight new blocks (< 2 seconds)
+          const age = (now - block.timestamp) / 1000;
+          if (age < 2) {
+            const pulse = age < 0.5 ? 1 : 1 - (age - 0.5) / 1.5;
+            ctx.strokeStyle = `rgba(0, 217, 165, ${pulse * 0.8})`;
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x, y, w, h);
+
+            if (age < 0.5) {
+              ctx.shadowBlur = 8;
+              ctx.shadowColor = "#00d9a5";
+              ctx.strokeRect(x, y, w, h);
+              ctx.shadowBlur = 0;
+            }
+          }
+
+          // Hover highlight
+          if (isHovered) {
+            ctx.strokeStyle = "rgba(255, 255, 255, 0.8)";
+            ctx.lineWidth = 2;
+            ctx.strokeRect(x, y, w, h);
           }
         }
       }
-      ctx.globalAlpha = 1;
 
+      setHoveredBlock(currentHovered);
       animationRef.current = requestAnimationFrame(draw);
     };
 
     animationRef.current = requestAnimationFrame(draw);
 
-    // Add blocks at Aptos block time
-    const blockTimer = setInterval(() => {
-      const row = colIndexRef.current % ROWS;
-      const col = Math.floor(colIndexRef.current / ROWS) % COLS;
-
-      // Varying tx counts
-      const busy = Math.sin(Date.now() / 3000) > 0;
-      const txCount = busy
-        ? Math.floor(Math.random() * 180) + 20
-        : Math.floor(Math.random() * 60) + 5;
-
-      blocksRef.current[row][col] = {
-        id: blockIdRef.current++,
-        timestamp: Date.now(),
-        txCount,
-      };
-
-      colIndexRef.current = (colIndexRef.current + 1) % (ROWS * COLS);
-
-      // Update stats less frequently (every 500ms)
-      const now = Date.now();
-      if (now - lastStatUpdateRef.current > 500) {
-        lastStatUpdateRef.current = now;
-        setStats({
-          blockHeight: blockIdRef.current,
-          tps: Math.round(1000 + Math.random() * 400),
-        });
-      }
-    }, 94);
-
     return () => {
       cancelAnimationFrame(animationRef.current);
-      clearInterval(blockTimer);
+      canvas.removeEventListener("mousemove", handleMouseMove);
       if (canvasRef.current && container.contains(canvasRef.current)) {
         container.removeChild(canvasRef.current);
       }
@@ -161,13 +225,13 @@ export function BlockStream() {
   }, []);
 
   return (
-    <div className="chrome-card p-4 sm:p-5">
+    <div className="chrome-card p-4 sm:p-5 relative">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
           <h3 className="section-title">Block River</h3>
-          <div className="live-badge">
+          <div className={`live-badge ${!connected ? 'opacity-50' : ''}`}>
             <span className="live-dot" />
-            Live
+            {connected ? 'Live' : 'Connecting...'}
           </div>
         </div>
         <div className="flex items-center gap-4 text-sm tabular-nums">
@@ -186,18 +250,39 @@ export function BlockStream() {
         style={{ height: "160px" }}
       />
 
-      <div className="flex items-center justify-center gap-4 mt-3 text-xs" style={{ color: "var(--chrome-500)" }}>
-        <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#1a4d3a" }} />
-          Low
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#00a86b" }} />
-          Med
-        </span>
-        <span className="flex items-center gap-1.5">
-          <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#00d9a5" }} />
-          High
+      {/* Hover tooltip */}
+      {hoveredBlock && hoveredBlock.blockHeight > 0 && (
+        <div className="absolute top-16 left-1/2 -translate-x-1/2 bg-black/95 border border-white/20 rounded-lg px-3 py-2 text-xs z-10 pointer-events-none">
+          <div className="text-emerald-400 font-mono font-bold">
+            Block #{hoveredBlock.blockHeight.toLocaleString()}
+          </div>
+          <div className="text-white/80 mt-1">
+            <span className="text-emerald-400 font-bold">{hoveredBlock.txCount}</span> transactions
+          </div>
+        </div>
+      )}
+
+      <div className="flex items-center justify-between mt-3 text-xs" style={{ color: "var(--chrome-500)" }}>
+        <div className="flex items-center gap-4">
+          <span className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#1a4d3a" }} />
+            1-10 tx
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#00875a" }} />
+            10-30 tx
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#00c77b" }} />
+            30-80 tx
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#00f5a0" }} />
+            80+ tx
+          </span>
+        </div>
+        <span style={{ color: "var(--chrome-600)" }}>
+          ~{stats.avgBlockTime || 94}ms blocks
         </span>
       </div>
     </div>

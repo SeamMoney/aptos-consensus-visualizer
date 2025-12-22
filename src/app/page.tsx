@@ -1,13 +1,25 @@
 "use client";
 
-import { LatencyCanvas } from "@/components/latency-canvas";
 import { BlockStream } from "@/components/block-stream";
-import { SpeedComparison } from "@/components/speed-comparison";
+import { ConsensusStatsPanel } from "@/components/consensus-stats";
+import { TpsRace } from "@/components/tps-race";
+import { LatencyChart } from "@/components/latency-chart";
+import { ConsensusRoundsChart } from "@/components/consensus-rounds-chart";
+import { TransactionPipeline } from "@/components/transaction-pipeline";
+import { ValidatorRing } from "@/components/validator-ring";
+import { RaptrConsensus } from "@/components/raptr-consensus";
+import { BlockSTM } from "@/components/block-stm";
+import { LeaderReputation } from "@/components/leader-reputation";
+import { QuorumStoreFlow } from "@/components/quorum-store-flow";
+import { ShardinesView } from "@/components/shardines-view";
+import { useAptosStream } from "@/hooks/useAptosStream";
 
 export default function Home() {
+  const { stats, connected } = useAptosStream();
+
   return (
     <main className="min-h-screen min-h-[100dvh] px-3 py-4 sm:px-6 sm:py-8">
-      <div className="max-w-xl mx-auto">
+      <div className="max-w-4xl mx-auto">
         {/* Header - Compact and clean */}
         <header className="flex items-center justify-between mb-4 sm:mb-6">
           <div>
@@ -15,47 +27,88 @@ export default function Home() {
               Aptos <span style={{ color: "var(--accent)" }}>Velociraptr</span>
             </h1>
             <p className="text-xs" style={{ color: "var(--chrome-600)" }}>
-              Sub-100ms consensus
+              Real-time consensus visualization
             </p>
           </div>
-          <div className="live-badge">
+          <div className={`live-badge ${!connected ? 'opacity-50' : ''}`}>
             <span className="live-dot" />
-            Mainnet
+            {connected ? 'Mainnet' : 'Connecting...'}
           </div>
         </header>
 
-        {/* Key Metrics - Compact hero stats */}
-        <div className="chrome-card p-3 sm:p-4 mb-4">
-          <div className="grid grid-cols-3 gap-2 text-center">
-            <div>
-              <div className="text-xl sm:text-2xl font-semibold tabular-nums" style={{ color: "var(--accent)" }}>~94ms</div>
-              <div className="stat-label">Block Time</div>
-            </div>
-            <div>
-              <div className="text-xl sm:text-2xl font-semibold tabular-nums" style={{ color: "var(--chrome-200)" }}>~650ms</div>
-              <div className="stat-label">Finality</div>
-            </div>
-            <div>
-              <div className="text-xl sm:text-2xl font-semibold tabular-nums" style={{ color: "var(--chrome-200)" }}>4</div>
-              <div className="stat-label">Hops</div>
-            </div>
-          </div>
-        </div>
-
-        {/* Block Stream - Primary visualization */}
+        {/* Block Stream - Live block production */}
         <section className="mb-4">
           <BlockStream />
         </section>
 
-        {/* Speed Comparison */}
+        {/* TPS Race - Chain comparison with flowing particles */}
         <section className="mb-4">
-          <SpeedComparison />
+          <TpsRace />
         </section>
 
-        {/* Latency Flow */}
+        {/* Latency Chart - Historical E2E latency like Grafana */}
         <section className="mb-4">
-          <LatencyCanvas />
+          <LatencyChart avgBlockTime={stats.avgBlockTime} />
         </section>
+
+        {/* Consensus Rounds Chart - Shows how fast consensus is progressing */}
+        <section className="mb-4">
+          <ConsensusRoundsChart recentBlocks={stats.recentBlocks} />
+        </section>
+
+        {/* Transaction Pipeline - Raptr consensus stages */}
+        <section className="mb-4">
+          <TransactionPipeline
+            recentBlocks={stats.recentBlocks}
+            consensus={stats.consensus}
+            avgBlockTime={stats.avgBlockTime}
+          />
+        </section>
+
+        {/* Stats Grid: Validator Ring + Stats */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+          <ValidatorRing consensus={stats.consensus} />
+          <ConsensusStatsPanel
+            consensus={stats.consensus}
+            recentBlocks={stats.recentBlocks}
+            tps={stats.tps}
+            avgBlockTime={stats.avgBlockTime}
+          />
+        </div>
+
+        {/* Consensus Tech Section Header */}
+        <div className="mb-4 pt-4 border-t border-white/5">
+          <h2 className="text-sm font-semibold tracking-wide mb-1" style={{ color: "var(--chrome-300)" }}>
+            CONSENSUS TECHNOLOGY
+          </h2>
+          <p className="text-xs" style={{ color: "var(--chrome-600)" }}>
+            Raptr, Block-STM, Quorum Store, Shoal++, Shardines
+          </p>
+        </div>
+
+        {/* Raptr 4-Hop Consensus */}
+        <section className="mb-4">
+          <RaptrConsensus
+            consensus={stats.consensus}
+            avgBlockTime={stats.avgBlockTime}
+          />
+        </section>
+
+        {/* Block-STM Parallel Execution */}
+        <section className="mb-4">
+          <BlockSTM tps={stats.tps} />
+        </section>
+
+        {/* Quorum Store Batch Flow */}
+        <section className="mb-4">
+          <QuorumStoreFlow tps={stats.tps} />
+        </section>
+
+        {/* Shoal++ and Shardines Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+          <LeaderReputation consensus={stats.consensus} />
+          <ShardinesView tps={stats.tps} />
+        </div>
 
         {/* Footer - Minimal */}
         <footer className="text-center py-4">
