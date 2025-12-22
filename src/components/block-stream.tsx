@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState } from "react";
 
 interface Block {
   id: number;
@@ -8,140 +8,148 @@ interface Block {
   txCount: number;
 }
 
-interface BlockStreamProps {
-  className?: string;
+// Color based on transaction count (like miniblocks)
+function getBlockColor(txCount: number): string {
+  if (txCount === 0) return "#1e1e22";
+  if (txCount < 20) return "#1a4d3a";
+  if (txCount < 50) return "#00875a";
+  if (txCount < 100) return "#00a86b";
+  if (txCount < 150) return "#00c77b";
+  return "#00d9a5";
 }
 
-export function BlockStream({ className = "" }: BlockStreamProps) {
+export function BlockStream() {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const blocksRef = useRef<Block[]>([]);
+  const blocksRef = useRef<Block[][]>([]);
   const blockIdRef = useRef(0);
+  const colIndexRef = useRef(0);
   const animationRef = useRef<number>(0);
+  const lastStatUpdateRef = useRef<number>(0);
 
+  // Stable stats - only update every 500ms to prevent flickering
   const [stats, setStats] = useState({
     blockHeight: 0,
-    avgBlockTime: 94,
-    tps: 0,
+    tps: 1200,
   });
 
-  const VISIBLE_BLOCKS = 60;
-  const BLOCK_INTERVAL = 94; // Aptos block time in ms
-
-  const draw = useCallback(() => {
-    const container = containerRef.current;
-    const canvas = canvasRef.current;
-    if (!container || !canvas) return;
-
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const dpr = window.devicePixelRatio || 1;
-    const rect = container.getBoundingClientRect();
-    const width = rect.width;
-    const height = rect.height;
-
-    if (canvas.width !== width * dpr || canvas.height !== height * dpr) {
-      canvas.width = width * dpr;
-      canvas.height = height * dpr;
-      canvas.style.width = width + "px";
-      canvas.style.height = height + "px";
-      ctx.scale(dpr, dpr);
-    }
-
-    // Clear
-    ctx.fillStyle = "#222225";
-    ctx.fillRect(0, 0, width, height);
-
-    const now = Date.now();
-    const blockWidth = width / VISIBLE_BLOCKS;
-    const padding = 2;
-    const barWidth = blockWidth - padding * 2;
-
-    // Draw blocks as bars from bottom
-    blocksRef.current.forEach((block, i) => {
-      const age = (now - block.timestamp) / 1000;
-      const fadeStart = 3;
-      const fadeDuration = 2;
-
-      let alpha = 1;
-      if (age > fadeStart) {
-        alpha = Math.max(0.2, 1 - (age - fadeStart) / fadeDuration);
-      }
-
-      const x = i * blockWidth + padding;
-      const maxBarHeight = height - 20;
-
-      // Bar height based on tx count (normalized)
-      const normalizedTx = Math.min(block.txCount / 200, 1);
-      const barHeight = Math.max(4, normalizedTx * maxBarHeight);
-      const y = height - 10 - barHeight;
-
-      // Color based on activity - using single accent color with varying brightness
-      const intensity = normalizedTx;
-      const r = Math.round(0 + intensity * 0);
-      const g = Math.round(180 + intensity * 37);
-      const b = Math.round(140 + intensity * 25);
-
-      ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
-
-      // Rounded rectangle for each bar
-      const radius = 2;
-      ctx.beginPath();
-      ctx.roundRect(x, y, barWidth, barHeight, [radius, radius, 0, 0]);
-      ctx.fill();
-
-      // Subtle highlight on recent blocks
-      if (age < 0.3) {
-        ctx.fillStyle = `rgba(255, 255, 255, ${0.2 * (1 - age / 0.3)})`;
-        ctx.beginPath();
-        ctx.roundRect(x, y, barWidth, 2, radius);
-        ctx.fill();
-      }
-    });
-
-    // Draw baseline
-    ctx.fillStyle = "rgba(255, 255, 255, 0.05)";
-    ctx.fillRect(0, height - 10, width, 1);
-
-    animationRef.current = requestAnimationFrame(draw);
-  }, []);
+  const COLS = 50;
+  const ROWS = 8;
 
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
+
+    // Initialize grid
+    for (let r = 0; r < ROWS; r++) {
+      blocksRef.current[r] = [];
+      for (let c = 0; c < COLS; c++) {
+        blocksRef.current[r][c] = { id: 0, timestamp: 0, txCount: 0 };
+      }
+    }
 
     const canvas = document.createElement("canvas");
     canvas.style.display = "block";
     container.appendChild(canvas);
     canvasRef.current = canvas;
 
-    // Start animation
+    let lastResize = 0;
+    const draw = () => {
+      if (!canvas || !container) return;
+
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      const now = Date.now();
+      const dpr = window.devicePixelRatio || 1;
+      const rect = container.getBoundingClientRect();
+      const width = rect.width;
+      const height = rect.height;
+
+      // Only resize occasionally
+      if (now - lastResize > 200) {
+        if (canvas.width !== Math.floor(width * dpr) || canvas.height !== Math.floor(height * dpr)) {
+          canvas.width = Math.floor(width * dpr);
+          canvas.height = Math.floor(height * dpr);
+          canvas.style.width = width + "px";
+          canvas.style.height = height + "px";
+          ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+          lastResize = now;
+        }
+      }
+
+      // Clear
+      ctx.fillStyle = "#141416";
+      ctx.fillRect(0, 0, width, height);
+
+      const cellW = width / COLS;
+      const cellH = height / ROWS;
+      const gap = 1;
+
+      // Draw blocks
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          const block = blocksRef.current[r]?.[c];
+          if (!block || block.timestamp === 0) continue;
+
+          const age = (now - block.timestamp) / 1000;
+          let alpha = 1;
+          if (age > 4) {
+            alpha = Math.max(0.15, 1 - (age - 4) / 6);
+          }
+
+          const x = c * cellW + gap;
+          const y = r * cellH + gap;
+          const w = cellW - gap * 2;
+          const h = cellH - gap * 2;
+
+          ctx.globalAlpha = alpha;
+          ctx.fillStyle = getBlockColor(block.txCount);
+          ctx.fillRect(x, y, w, h);
+
+          // Glow on new blocks
+          if (age < 0.2) {
+            ctx.fillStyle = "rgba(0, 217, 165, 0.4)";
+            ctx.fillRect(x, y, w, h);
+          }
+        }
+      }
+      ctx.globalAlpha = 1;
+
+      animationRef.current = requestAnimationFrame(draw);
+    };
+
     animationRef.current = requestAnimationFrame(draw);
 
-    // Simulate blocks arriving
+    // Add blocks at Aptos block time
     const blockTimer = setInterval(() => {
-      const txCount = Math.floor(Math.random() * 200) + 10;
-      const newBlock: Block = {
+      const row = colIndexRef.current % ROWS;
+      const col = Math.floor(colIndexRef.current / ROWS) % COLS;
+
+      // Varying tx counts
+      const busy = Math.sin(Date.now() / 3000) > 0;
+      const txCount = busy
+        ? Math.floor(Math.random() * 180) + 20
+        : Math.floor(Math.random() * 60) + 5;
+
+      blocksRef.current[row][col] = {
         id: blockIdRef.current++,
         timestamp: Date.now(),
         txCount,
       };
 
-      blocksRef.current.push(newBlock);
+      colIndexRef.current = (colIndexRef.current + 1) % (ROWS * COLS);
 
-      // Keep only visible blocks
-      while (blocksRef.current.length > VISIBLE_BLOCKS) {
-        blocksRef.current.shift();
+      // Update stats less frequently (every 500ms)
+      const now = Date.now();
+      if (now - lastStatUpdateRef.current > 500) {
+        lastStatUpdateRef.current = now;
+        setStats({
+          blockHeight: blockIdRef.current,
+          tps: Math.round(1000 + Math.random() * 400),
+        });
       }
-
-      // Update stats smoothly
-      setStats((prev) => ({
-        blockHeight: newBlock.id,
-        avgBlockTime: Math.round(prev.avgBlockTime * 0.9 + (94 + (Math.random() - 0.5) * 10) * 0.1),
-        tps: Math.round(txCount / 0.094),
-      }));
-    }, BLOCK_INTERVAL);
+    }, 94);
 
     return () => {
       cancelAnimationFrame(animationRef.current);
@@ -150,52 +158,47 @@ export function BlockStream({ className = "" }: BlockStreamProps) {
         container.removeChild(canvasRef.current);
       }
     };
-  }, [draw]);
+  }, []);
 
   return (
-    <div className={"chrome-card p-4 sm:p-6 " + className}>
-      <div className="flex items-center justify-between mb-4">
-        <div className="flex items-center gap-3">
-          <h3 className="section-title">Block Stream</h3>
+    <div className="chrome-card p-4 sm:p-5">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <h3 className="section-title">Block River</h3>
           <div className="live-badge">
             <span className="live-dot" />
             Live
           </div>
         </div>
-        <div className="flex items-center gap-4 text-xs sm:text-sm">
-          <div>
-            <span style={{ color: "var(--chrome-500)" }}>Block </span>
-            <span className="stat-value text-sm">{stats.blockHeight.toLocaleString()}</span>
-          </div>
-          <div>
-            <span style={{ color: "var(--chrome-500)" }}>TPS </span>
-            <span className="stat-value stat-value-accent text-sm">{stats.tps.toLocaleString()}</span>
-          </div>
+        <div className="flex items-center gap-4 text-sm tabular-nums">
+          <span style={{ color: "var(--chrome-500)" }}>
+            TPS <span className="stat-value-accent">{stats.tps.toLocaleString()}</span>
+          </span>
+          <span style={{ color: "var(--chrome-500)" }}>
+            Block <span style={{ color: "var(--chrome-200)" }}>{stats.blockHeight.toLocaleString()}</span>
+          </span>
         </div>
       </div>
 
-      {/* Canvas */}
       <div
         ref={containerRef}
         className="canvas-wrap"
-        style={{ height: "140px" }}
+        style={{ height: "160px" }}
       />
 
-      {/* Legend */}
-      <div className="flex items-center justify-between mt-3">
-        <span className="text-xs" style={{ color: "var(--chrome-500)" }}>
-          Transaction volume per block
+      <div className="flex items-center justify-center gap-4 mt-3 text-xs" style={{ color: "var(--chrome-500)" }}>
+        <span className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#1a4d3a" }} />
+          Low
         </span>
-        <div className="flex items-center gap-2">
-          <div className="flex items-center gap-1">
-            <div className="w-2 h-2 rounded-sm" style={{ background: "rgb(0, 180, 140)" }} />
-            <span className="text-xs" style={{ color: "var(--chrome-500)" }}>Low</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <div className="w-2 h-2 rounded-sm" style={{ background: "rgb(0, 217, 165)" }} />
-            <span className="text-xs" style={{ color: "var(--chrome-500)" }}>High</span>
-          </div>
-        </div>
+        <span className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#00a86b" }} />
+          Med
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#00d9a5" }} />
+          High
+        </span>
       </div>
     </div>
   );
