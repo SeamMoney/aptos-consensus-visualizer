@@ -4,11 +4,195 @@
 
 :root {
   --aptos-teal: #06D6A0;
-  --aptos-dark: #1A1A2E;
-  --aptos-light: #F8F9FA;
+  --aptos-pink: #ff428e;
+  --aptos-blue: #4ecdc4;
+  --aptos-purple: #8b5cf6;
+  --aptos-orange: #f39c12;
+  --bg-dark: #0a0a0f;
+  --bg-card: rgba(15, 15, 20, 0.95);
+  --border-glow: rgba(6, 214, 160, 0.3);
+}
+
+* {
+  box-sizing: border-box;
 }
 
 body {
-  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  background: var(--bg-dark);
+  background-image:
+    radial-gradient(ellipse at top, rgba(6, 214, 160, 0.05) 0%, transparent 50%),
+    radial-gradient(ellipse at bottom right, rgba(255, 66, 142, 0.03) 0%, transparent 50%);
   min-height: 100vh;
+  color: #e0e0e0;
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+/* Glassmorphism Cards */
+.glass-card {
+  background: var(--bg-card);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 16px;
+  backdrop-filter: blur(10px);
+  transition: all 0.3s ease;
+}
+
+.glass-card:hover {
+  transform: translateY(-2px);
+  border-color: var(--border-glow);
+  box-shadow: 0 0 30px rgba(6, 214, 160, 0.1);
+}
+
+/* Stat Cards */
+.stat-card {
+  background: linear-gradient(135deg, rgba(20, 20, 30, 0.9) 0%, rgba(15, 15, 25, 0.95) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  padding: 1.25rem;
+  transition: all 0.3s ease;
+}
+
+.stat-card:hover {
+  border-color: var(--aptos-teal);
+  box-shadow: 0 0 20px rgba(6, 214, 160, 0.15);
+}
+
+.stat-value {
+  font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  font-size: 1.75rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, var(--aptos-teal) 0%, var(--aptos-blue) 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.stat-label {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #6b7280;
+  margin-top: 0.25rem;
+}
+
+/* Pulse Animation */
+@keyframes pulse-glow {
+  0%, 100% {
+    box-shadow: 0 0 5px var(--aptos-teal), 0 0 10px rgba(6, 214, 160, 0.3);
+    opacity: 1;
+  }
+  50% {
+    box-shadow: 0 0 20px var(--aptos-teal), 0 0 40px rgba(6, 214, 160, 0.5);
+    opacity: 0.8;
+  }
+}
+
+.pulse-dot {
+  animation: pulse-glow 2s ease-in-out infinite;
+}
+
+/* Block Animation */
+@keyframes block-appear {
+  0% {
+    transform: scale(0);
+    opacity: 0;
+  }
+  50% {
+    transform: scale(1.2);
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+.block-new {
+  animation: block-appear 0.3s ease-out forwards;
+}
+
+/* Flow Animation */
+@keyframes flow {
+  0% { transform: translateX(-100%); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateX(100vw); opacity: 0; }
+}
+
+/* Particle Trail */
+@keyframes particle-trail {
+  0% {
+    transform: translateX(0) scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(100%) scale(0.5);
+    opacity: 0;
+  }
+}
+
+/* Live indicator */
+.live-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.live-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--aptos-teal);
+  animation: pulse-glow 1.5s ease-in-out infinite;
+}
+
+/* Canvas Container */
+.canvas-container {
+  position: relative;
+  width: 100%;
+  border-radius: 16px;
+  overflow: hidden;
+  background: linear-gradient(180deg, rgba(10, 10, 15, 0.8) 0%, rgba(15, 15, 25, 0.9) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Timeline */
+.timeline-segment {
+  height: 4px;
+  border-radius: 2px;
+  position: relative;
+  overflow: hidden;
+}
+
+.timeline-segment::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 50%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.3), transparent);
+  animation: shimmer 2s infinite;
+}
+
+@keyframes shimmer {
+  100% { left: 200%; }
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(6, 214, 160, 0.3);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(6, 214, 160, 0.5);
 }
