@@ -4,49 +4,44 @@ import { useRef, useEffect, useState, memo } from "react";
 import { useVisibility } from "@/hooks/useVisibility";
 
 /**
- * Consensus Evolution Comparison
+ * Mysticeti v2 vs Archon Architecture Comparison
  *
- * Shows the evolution of Aptos consensus:
- * AptosBFT (100ms) → Baby Raptr (80ms) → Velociraptr (60ms) → Archon (10ms)
- *
- * Plus comparison to competitors:
- * - Solana Tower BFT (400ms blocks, 12.8s finality)
- * - Sui Mysticeti v2 (250-300ms blocks)
+ * Shows the fundamental architectural differences:
+ * - Mysticeti v2: DAG-based parallel proposals, commit by depth
+ * - Archon: Co-located cluster, ultra-fast internal consensus
  */
 
-interface ConsensusProtocol {
-  name: string;
-  blockTime: number;
-  finality: number;
-  color: string;
-  year: string;
-  innovation: string;
-  chain: "aptos" | "solana" | "sui";
+interface DAGBlock {
+  id: number;
+  x: number;
+  y: number;
+  validator: number;
+  parents: number[];
+  depth: number;
+  committed: boolean;
+  opacity: number;
 }
 
-const PROTOCOLS: ConsensusProtocol[] = [
-  // Aptos evolution
-  { name: "AptosBFT v4", blockTime: 100, finality: 1500, color: "#6B7280", year: "2023", innovation: "Jolteon 2-chain", chain: "aptos" },
-  { name: "Baby Raptr", blockTime: 80, finality: 1000, color: "#8B5CF6", year: "2024", innovation: "Optimistic QS", chain: "aptos" },
-  { name: "Velociraptr", blockTime: 60, finality: 800, color: "#3B82F6", year: "2025", innovation: "Pipelined proposals", chain: "aptos" },
-  { name: "Archon", blockTime: 10, finality: 30, color: "#00D9A5", year: "2026", innovation: "Co-located cluster", chain: "aptos" },
-  // Competitors
-  { name: "Solana Tower", blockTime: 400, finality: 12800, color: "#9945FF", year: "Current", innovation: "PoH + 32-layer", chain: "solana" },
-  { name: "Sui Mysticeti", blockTime: 180, finality: 250, color: "#6FBCF0", year: "2025", innovation: "DAG parallel", chain: "sui" },
-];
-
-const APTOS_PROTOCOLS = PROTOCOLS.filter(p => p.chain === "aptos");
-const COMPETITOR_PROTOCOLS = PROTOCOLS.filter(p => p.chain !== "aptos");
+interface ClusterNode {
+  x: number;
+  y: number;
+  angle: number;
+  isCluster: boolean;
+  label: string;
+}
 
 export const ConsensusEvolution = memo(function ConsensusEvolution() {
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>(0);
-  const [activeProtocol, setActiveProtocol] = useState(0);
   const [isMobile, setIsMobile] = useState(false);
   const isVisible = useVisibility(containerRef);
-  const phaseTimerRef = useRef(0);
-  const animProgressRef = useRef(0);
+
+  // Animation state
+  const frameRef = useRef(0);
+  const dagBlocksRef = useRef<DAGBlock[]>([]);
+  const clusterPhaseRef = useRef(0);
+  const messageProgressRef = useRef(0);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -58,6 +53,54 @@ export const ConsensusEvolution = memo(function ConsensusEvolution() {
     let lastTime = 0;
     const targetFPS = 30;
     const frameInterval = 1000 / targetFPS;
+
+    // DAG colors for validators
+    const dagColors = ["#6FBCF0", "#4A9FD4", "#2E82B8", "#5BB5E5"];
+
+    // Initialize DAG blocks
+    const initDAG = (width: number, height: number, mobile: boolean) => {
+      const blocks: DAGBlock[] = [];
+      const halfW = mobile ? width : width / 2;
+      const startX = mobile ? 20 : 20;
+      const endX = halfW - 20;
+      const startY = mobile ? 50 : 60;
+      const endY = mobile ? height * 0.45 - 20 : height - 80;
+
+      const cols = mobile ? 4 : 5;
+      const rows = mobile ? 3 : 4;
+      const colWidth = (endX - startX) / cols;
+      const rowHeight = (endY - startY) / rows;
+
+      let id = 0;
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          const validator = col % 4;
+          const parents: number[] = [];
+
+          // Connect to blocks in previous row
+          if (row > 0) {
+            const prevRowStart = (row - 1) * cols;
+            // Each block connects to 2-3 parents
+            if (col > 0) parents.push(prevRowStart + col - 1);
+            parents.push(prevRowStart + col);
+            if (col < cols - 1) parents.push(prevRowStart + col + 1);
+          }
+
+          blocks.push({
+            id,
+            x: startX + col * colWidth + colWidth / 2 + (Math.random() - 0.5) * 10,
+            y: startY + row * rowHeight + rowHeight / 2,
+            validator,
+            parents,
+            depth: row,
+            committed: row < rows - 2,
+            opacity: 0,
+          });
+          id++;
+        }
+      }
+      return blocks;
+    };
 
     const render = (timestamp: number) => {
       if (!isVisible) {
@@ -83,255 +126,387 @@ export const ConsensusEvolution = memo(function ConsensusEvolution() {
         canvas.height = Math.floor(height * dpr);
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.scale(dpr, dpr);
+        dagBlocksRef.current = initDAG(width, height, mobile);
       }
+
+      frameRef.current++;
+      const frame = frameRef.current;
 
       // Clear
       ctx.fillStyle = "#0a0a0b";
       ctx.fillRect(0, 0, width, height);
 
-      // Phase timer for cycling through protocols
-      phaseTimerRef.current++;
-      if (phaseTimerRef.current > 60) {
-        phaseTimerRef.current = 0;
-        setActiveProtocol((prev) => (prev + 1) % APTOS_PROTOCOLS.length);
-        animProgressRef.current = 0;
+      const padding = mobile ? 10 : 20;
+
+      if (mobile) {
+        // === MOBILE: STACKED LAYOUT ===
+        const dividerY = height * 0.48;
+
+        // Mysticeti section (top)
+        drawMysticetiSection(ctx, 0, 0, width, dividerY, padding, frame, dagBlocksRef.current, dagColors, true);
+
+        // Divider
+        ctx.strokeStyle = "rgba(255,255,255,0.1)";
+        ctx.beginPath();
+        ctx.moveTo(padding, dividerY);
+        ctx.lineTo(width - padding, dividerY);
+        ctx.stroke();
+
+        // Archon section (bottom)
+        drawArchonSection(ctx, 0, dividerY, width, height - dividerY, padding, frame, true);
+
+      } else {
+        // === DESKTOP: SIDE BY SIDE ===
+        const halfW = width / 2;
+
+        // Mysticeti section (left)
+        drawMysticetiSection(ctx, 0, 0, halfW, height, padding, frame, dagBlocksRef.current, dagColors, false);
+
+        // Divider
+        ctx.strokeStyle = "rgba(255,255,255,0.1)";
+        ctx.beginPath();
+        ctx.moveTo(halfW, padding + 30);
+        ctx.lineTo(halfW, height - padding);
+        ctx.stroke();
+
+        // Archon section (right)
+        drawArchonSection(ctx, halfW, 0, halfW, height, padding, frame, false);
       }
 
-      // Animate progress
-      animProgressRef.current = Math.min(animProgressRef.current + 0.03, 1);
-      const easeOut = 1 - Math.pow(1 - animProgressRef.current, 3);
-
-      const padding = mobile ? 10 : 20;
-      const titleY = mobile ? 18 : 25;
-
-      // Title
-      ctx.fillStyle = "#00D9A5";
-      ctx.font = mobile ? "bold 9px system-ui" : "bold 11px system-ui";
-      ctx.textAlign = "left";
-      ctx.fillText("CONSENSUS EVOLUTION", padding, titleY);
-
-      // Subtitle showing active protocol
-      const activeProto = APTOS_PROTOCOLS[activeProtocol];
-      ctx.fillStyle = activeProto.color;
-      ctx.font = mobile ? "bold 7px monospace" : "bold 9px monospace";
-      ctx.textAlign = "right";
-      ctx.fillText(`${activeProto.name}: ${activeProto.blockTime}ms`, width - padding, titleY);
-
-      // === APTOS EVOLUTION SECTION ===
-      const sectionY = mobile ? 35 : 45;
-      const barHeight = mobile ? 16 : 22;
-      const barGap = mobile ? 6 : 10;
-      const maxBlockTime = 120; // Scale for Aptos protocols
-      const barMaxWidth = width - padding * 2 - (mobile ? 70 : 100);
-
-      ctx.fillStyle = "rgba(255,255,255,0.6)";
-      ctx.font = mobile ? "bold 7px system-ui" : "bold 9px system-ui";
-      ctx.textAlign = "left";
-      ctx.fillText("APTOS", padding, sectionY);
-
-      APTOS_PROTOCOLS.forEach((proto, i) => {
-        const y = sectionY + 10 + i * (barHeight + barGap);
-        const isActive = i === activeProtocol;
-        const barWidth = (proto.blockTime / maxBlockTime) * barMaxWidth;
-        const animatedWidth = i <= activeProtocol ? barWidth * easeOut : barWidth;
-
-        // Label
-        ctx.fillStyle = isActive ? proto.color : "rgba(255,255,255,0.5)";
-        ctx.font = mobile ? "6px system-ui" : "8px system-ui";
-        ctx.textAlign = "left";
-        ctx.fillText(proto.name, padding, y + barHeight / 2 + 3);
-
-        // Bar background
-        const barX = padding + (mobile ? 55 : 75);
-        ctx.fillStyle = "rgba(255,255,255,0.05)";
-        ctx.beginPath();
-        ctx.roundRect(barX, y, barMaxWidth, barHeight, 3);
-        ctx.fill();
-
-        // Bar fill
-        ctx.fillStyle = proto.color + (isActive ? "" : "80");
-        ctx.beginPath();
-        ctx.roundRect(barX, y, animatedWidth, barHeight, 3);
-        ctx.fill();
-
-        // Glow for active
-        if (isActive) {
-          ctx.shadowColor = proto.color;
-          ctx.shadowBlur = 10;
-          ctx.beginPath();
-          ctx.roundRect(barX, y, animatedWidth, barHeight, 3);
-          ctx.fill();
-          ctx.shadowBlur = 0;
-        }
-
-        // Block time label
-        ctx.fillStyle = isActive ? "#fff" : "rgba(255,255,255,0.6)";
-        ctx.font = mobile ? "bold 8px monospace" : "bold 10px monospace";
-        ctx.textAlign = "left";
-        ctx.fillText(`${proto.blockTime}ms`, barX + animatedWidth + 8, y + barHeight / 2 + 4);
-
-        // Innovation tag for active
-        if (isActive && !mobile) {
-          ctx.fillStyle = "rgba(255,255,255,0.4)";
-          ctx.font = "6px system-ui";
-          ctx.textAlign = "right";
-          ctx.fillText(proto.innovation, width - padding, y + barHeight / 2 + 2);
-        }
+      // Update DAG block opacity
+      dagBlocksRef.current.forEach((block, i) => {
+        const targetOpacity = ((frame / 3) % 60 > i * 3) ? 1 : 0;
+        block.opacity += (targetOpacity - block.opacity) * 0.1;
       });
 
-      // === COMPETITOR COMPARISON ===
-      const compY = sectionY + (APTOS_PROTOCOLS.length + 1) * (barHeight + barGap) + (mobile ? 15 : 25);
-      const compMaxBlockTime = 450; // Scale for competitors
-      const compBarMaxWidth = width - padding * 2 - (mobile ? 70 : 100);
-
-      ctx.fillStyle = "rgba(255,255,255,0.6)";
-      ctx.font = mobile ? "bold 7px system-ui" : "bold 9px system-ui";
-      ctx.textAlign = "left";
-      ctx.fillText("COMPETITORS", padding, compY);
-
-      // Add Archon to competitor view for comparison
-      const comparisonProtocols = [
-        APTOS_PROTOCOLS[3], // Archon
-        ...COMPETITOR_PROTOCOLS,
-      ];
-
-      comparisonProtocols.forEach((proto, i) => {
-        const y = compY + 10 + i * (barHeight + barGap);
-        const barWidth = Math.min((proto.blockTime / compMaxBlockTime) * compBarMaxWidth, compBarMaxWidth);
-        const isArchon = proto.name === "Archon";
-
-        // Label
-        ctx.fillStyle = proto.color;
-        ctx.font = mobile ? "6px system-ui" : "8px system-ui";
-        ctx.textAlign = "left";
-        ctx.fillText(proto.name, padding, y + barHeight / 2 + 3);
-
-        // Bar background
-        const barX = padding + (mobile ? 55 : 75);
-        ctx.fillStyle = "rgba(255,255,255,0.05)";
-        ctx.beginPath();
-        ctx.roundRect(barX, y, compBarMaxWidth, barHeight, 3);
-        ctx.fill();
-
-        // Bar fill
-        ctx.fillStyle = proto.color + (isArchon ? "" : "80");
-        ctx.beginPath();
-        ctx.roundRect(barX, y, barWidth, barHeight, 3);
-        ctx.fill();
-
-        // Block time label
-        ctx.fillStyle = isArchon ? "#fff" : "rgba(255,255,255,0.6)";
-        ctx.font = mobile ? "bold 8px monospace" : "bold 10px monospace";
-        ctx.textAlign = "left";
-
-        const timeLabel = proto.blockTime >= 1000
-          ? `${(proto.blockTime / 1000).toFixed(1)}s`
-          : `${proto.blockTime}ms`;
-        ctx.fillText(timeLabel, barX + barWidth + 8, y + barHeight / 2 + 4);
-
-        // Chain logo/indicator
-        if (proto.chain === "solana") {
-          ctx.fillStyle = proto.color + "40";
-          ctx.font = mobile ? "5px system-ui" : "6px system-ui";
-          ctx.textAlign = "right";
-          ctx.fillText("SOL", width - padding, y + barHeight / 2 + 2);
-        } else if (proto.chain === "sui") {
-          ctx.fillStyle = proto.color + "40";
-          ctx.font = mobile ? "5px system-ui" : "6px system-ui";
-          ctx.textAlign = "right";
-          ctx.fillText("SUI", width - padding, y + barHeight / 2 + 2);
-        }
-      });
-
-      // Speedup callout at bottom
-      const calloutY = height - (mobile ? 18 : 25);
-      const speedupVsVelo = Math.round(60 / 10);
-      const speedupVsSolana = Math.round(400 / 10);
-
-      ctx.fillStyle = "#00D9A5";
-      ctx.font = mobile ? "bold 8px system-ui" : "bold 10px system-ui";
-      ctx.textAlign = "center";
-      ctx.fillText(
-        mobile
-          ? `Archon: ${speedupVsVelo}× faster than Velociraptr`
-          : `Archon: ${speedupVsVelo}× faster than Velociraptr, ${speedupVsSolana}× faster than Solana`,
-        width / 2,
-        calloutY
-      );
+      // Cycle animation
+      if (frame % 180 === 0) {
+        dagBlocksRef.current = initDAG(width, height, mobile);
+      }
 
       animationRef.current = requestAnimationFrame(render);
     };
 
     animationRef.current = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animationRef.current);
-  }, [activeProtocol, isVisible]);
+  }, [isVisible]);
 
   return (
     <div ref={containerRef} className="chrome-card p-2 sm:p-4">
       <div className="flex items-center justify-between mb-2">
         <div className="min-w-0">
           <h3 className="text-xs sm:text-sm font-bold" style={{ color: "var(--chrome-200)" }}>
-            Block Time Comparison
+            Consensus Architecture
           </h3>
           <p className="text-[9px] sm:text-xs" style={{ color: "var(--chrome-600)" }}>
-            {isMobile ? "Aptos evolution vs competitors" : "Aptos consensus evolution vs Solana & Sui"}
+            {isMobile ? "DAG vs Cluster consensus" : "Sui Mysticeti v2 (DAG) vs Aptos Archon (Cluster)"}
           </p>
         </div>
-        <div className="flex items-center gap-1">
-          {APTOS_PROTOCOLS.map((proto, i) => (
-            <div
-              key={proto.name}
-              className="w-2 h-2 rounded-full"
-              style={{
-                backgroundColor: proto.color,
-                opacity: i === activeProtocol ? 1 : 0.3,
-              }}
-            />
-          ))}
+        <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
+            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: "#6FBCF0" }} />
+            <span className="text-[8px] sm:text-[10px]" style={{ color: "var(--chrome-500)" }}>Sui</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <div className="w-2 h-2 rounded-full" style={{ backgroundColor: "#00D9A5" }} />
+            <span className="text-[8px] sm:text-[10px]" style={{ color: "var(--chrome-500)" }}>Aptos</span>
+          </div>
         </div>
       </div>
 
       <canvas
         ref={canvasRef}
         className="w-full rounded"
-        style={{ height: isMobile ? "260px" : "320px" }}
+        style={{ height: isMobile ? "380px" : "300px" }}
       />
 
-      {/* Protocol details */}
-      <div className="mt-2 grid grid-cols-2 sm:grid-cols-4 gap-1.5">
-        {APTOS_PROTOCOLS.map((proto, i) => (
-          <div
-            key={proto.name}
-            className={`p-1.5 rounded text-center transition-all ${
-              i === activeProtocol ? "bg-white/10 border border-white/20" : "bg-white/5"
-            }`}
-          >
-            <div
-              className="text-[10px] sm:text-xs font-bold"
-              style={{ color: proto.color }}
-            >
-              {proto.name}
-            </div>
-            <div className="text-sm sm:text-lg font-bold" style={{ color: proto.color }}>
-              {proto.blockTime}ms
-            </div>
-            <div className="text-[7px] sm:text-[9px]" style={{ color: "var(--chrome-600)" }}>
-              {proto.year}
-            </div>
+      {/* Architecture summary */}
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <div className="p-2 rounded bg-[#6FBCF0]/10 border border-[#6FBCF0]/20">
+          <div className="text-[10px] sm:text-xs font-bold" style={{ color: "#6FBCF0" }}>
+            Mysticeti v2
           </div>
-        ))}
+          <div className="text-[8px] sm:text-[10px] mt-1" style={{ color: "var(--chrome-500)" }}>
+            Parallel proposals form DAG. Commit when certified by 2f+1 validators.
+          </div>
+          <div className="text-xs sm:text-sm font-bold mt-1" style={{ color: "#6FBCF0" }}>
+            ~180ms
+          </div>
+        </div>
+        <div className="p-2 rounded bg-[#00D9A5]/10 border border-[#00D9A5]/20">
+          <div className="text-[10px] sm:text-xs font-bold" style={{ color: "#00D9A5" }}>
+            Archon
+          </div>
+          <div className="text-[8px] sm:text-[10px] mt-1" style={{ color: "var(--chrome-500)" }}>
+            Co-located cluster reaches consensus in ~5ms, then broadcasts once.
+          </div>
+          <div className="text-xs sm:text-sm font-bold mt-1" style={{ color: "#00D9A5" }}>
+            ~10ms
+          </div>
+        </div>
       </div>
 
       {/* Key insight */}
       <div className="mt-2 p-1.5 rounded bg-white/5">
         <p className="text-[8px] sm:text-xs" style={{ color: "var(--chrome-500)" }}>
-          <span className="font-bold" style={{ color: "#00D9A5" }}>Evolution:</span>
+          <span className="font-bold" style={{ color: "#00D9A5" }}>Key insight:</span>
           {isMobile
-            ? " AptosBFT→Velociraptr: 40% faster. Velociraptr→Archon: 6× faster. Total: 10× improvement."
-            : " AptosBFT to Velociraptr achieved 40% speedup via pipelining. Archon achieves 6× more via co-located consensus cluster. Solana's 400ms slots make Archon 40× faster."
+            ? " Mysticeti parallelizes proposals. Archon eliminates network latency within the cluster."
+            : " Mysticeti achieves speed through parallel DAG proposals. Archon achieves 18× faster blocks by eliminating network latency—cluster nodes in same datacenter reach consensus in microseconds."
           }
         </p>
       </div>
     </div>
   );
 });
+
+// Draw Mysticeti DAG section
+function drawMysticetiSection(
+  ctx: CanvasRenderingContext2D,
+  offsetX: number,
+  offsetY: number,
+  width: number,
+  height: number,
+  padding: number,
+  frame: number,
+  blocks: DAGBlock[],
+  colors: string[],
+  mobile: boolean
+) {
+  const titleY = offsetY + (mobile ? 18 : 25);
+
+  // Title
+  ctx.fillStyle = "#6FBCF0";
+  ctx.font = mobile ? "bold 9px system-ui" : "bold 11px system-ui";
+  ctx.textAlign = "left";
+  ctx.fillText("MYSTICETI v2", offsetX + padding, titleY);
+
+  // Subtitle
+  ctx.fillStyle = "rgba(255,255,255,0.5)";
+  ctx.font = mobile ? "6px system-ui" : "8px system-ui";
+  ctx.textAlign = "right";
+  ctx.fillText("DAG Parallel Consensus", offsetX + width - padding, titleY);
+
+  // Draw DAG edges first
+  ctx.strokeStyle = "rgba(111, 188, 240, 0.2)";
+  ctx.lineWidth = 1;
+  blocks.forEach(block => {
+    if (block.opacity < 0.1) return;
+    block.parents.forEach(parentId => {
+      const parent = blocks[parentId];
+      if (!parent || parent.opacity < 0.1) return;
+
+      ctx.globalAlpha = Math.min(block.opacity, parent.opacity) * 0.5;
+      ctx.beginPath();
+      ctx.moveTo(offsetX + parent.x, offsetY + parent.y);
+      ctx.lineTo(offsetX + block.x, offsetY + block.y);
+      ctx.stroke();
+    });
+  });
+  ctx.globalAlpha = 1;
+
+  // Draw DAG nodes
+  blocks.forEach(block => {
+    if (block.opacity < 0.1) return;
+
+    const color = colors[block.validator];
+    const size = mobile ? 6 : 8;
+
+    ctx.globalAlpha = block.opacity;
+
+    // Committed glow
+    if (block.committed) {
+      ctx.shadowColor = color;
+      ctx.shadowBlur = 8;
+    }
+
+    ctx.fillStyle = block.committed ? color : color + "80";
+    ctx.beginPath();
+    ctx.arc(offsetX + block.x, offsetY + block.y, size, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.shadowBlur = 0;
+  });
+  ctx.globalAlpha = 1;
+
+  // Validator legend
+  const legendY = offsetY + height - (mobile ? 25 : 35);
+  ctx.font = mobile ? "6px system-ui" : "7px system-ui";
+  ctx.textAlign = "center";
+
+  for (let i = 0; i < 4; i++) {
+    const x = offsetX + padding + 20 + i * (mobile ? 35 : 45);
+    ctx.fillStyle = colors[i];
+    ctx.beginPath();
+    ctx.arc(x, legendY, mobile ? 3 : 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "rgba(255,255,255,0.4)";
+    ctx.fillText(`V${i + 1}`, x, legendY + (mobile ? 10 : 12));
+  }
+
+  // "Parallel" annotation
+  const annotY = offsetY + (mobile ? 35 : 45);
+  ctx.fillStyle = "rgba(111, 188, 240, 0.6)";
+  ctx.font = mobile ? "bold 7px system-ui" : "bold 8px system-ui";
+  ctx.textAlign = "center";
+  ctx.fillText("← Parallel proposals →", offsetX + width / 2, annotY);
+}
+
+// Draw Archon cluster section
+function drawArchonSection(
+  ctx: CanvasRenderingContext2D,
+  offsetX: number,
+  offsetY: number,
+  width: number,
+  height: number,
+  padding: number,
+  frame: number,
+  mobile: boolean
+) {
+  const titleY = offsetY + (mobile ? 18 : 25);
+
+  // Title
+  ctx.fillStyle = "#00D9A5";
+  ctx.font = mobile ? "bold 9px system-ui" : "bold 11px system-ui";
+  ctx.textAlign = "left";
+  ctx.fillText("ARCHON", offsetX + padding, titleY);
+
+  // Subtitle
+  ctx.fillStyle = "rgba(255,255,255,0.5)";
+  ctx.font = mobile ? "6px system-ui" : "8px system-ui";
+  ctx.textAlign = "right";
+  ctx.fillText("Co-located Cluster", offsetX + width - padding, titleY);
+
+  const centerX = offsetX + width / 2;
+  const centerY = offsetY + height / 2 + (mobile ? 5 : 10);
+  const clusterRadius = mobile ? 25 : 35;
+  const externalRadius = mobile ? 55 : 80;
+
+  // Animation phase
+  const phase = (frame % 90) / 90;
+  const internalPhase = phase < 0.3 ? phase / 0.3 : 1;
+  const externalPhase = phase > 0.3 ? (phase - 0.3) / 0.7 : 0;
+
+  // Draw external validators ring
+  ctx.strokeStyle = "rgba(255,255,255,0.1)";
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, externalRadius, 0, Math.PI * 2);
+  ctx.stroke();
+
+  // External validators
+  const externalCount = mobile ? 6 : 8;
+  const externalNodes: { x: number; y: number }[] = [];
+  for (let i = 0; i < externalCount; i++) {
+    const angle = (i / externalCount) * Math.PI * 2 - Math.PI / 2;
+    const x = centerX + Math.cos(angle) * externalRadius;
+    const y = centerY + Math.sin(angle) * externalRadius;
+    externalNodes.push({ x, y });
+
+    ctx.fillStyle = "#00D9A5" + "60";
+    ctx.beginPath();
+    ctx.arc(x, y, mobile ? 5 : 7, 0, Math.PI * 2);
+    ctx.fill();
+  }
+
+  // Cluster background
+  ctx.fillStyle = "rgba(0, 217, 165, 0.1)";
+  ctx.beginPath();
+  ctx.arc(centerX, centerY, clusterRadius + 10, 0, Math.PI * 2);
+  ctx.fill();
+
+  // "SAME DC" label
+  ctx.fillStyle = "rgba(0, 217, 165, 0.4)";
+  ctx.font = mobile ? "bold 6px system-ui" : "bold 7px system-ui";
+  ctx.textAlign = "center";
+  ctx.fillText("SAME DC", centerX, centerY - clusterRadius - (mobile ? 15 : 20));
+
+  // Cluster nodes
+  const clusterCount = 5;
+  const clusterNodes: { x: number; y: number }[] = [];
+  for (let i = 0; i < clusterCount; i++) {
+    const angle = (i / clusterCount) * Math.PI * 2 - Math.PI / 2;
+    const x = centerX + Math.cos(angle) * clusterRadius;
+    const y = centerY + Math.sin(angle) * clusterRadius;
+    clusterNodes.push({ x, y });
+  }
+
+  // Internal consensus messages (fast)
+  if (internalPhase > 0 && internalPhase < 1) {
+    ctx.strokeStyle = "#00D9A5";
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = 0.6;
+
+    for (let i = 0; i < clusterCount; i++) {
+      for (let j = i + 1; j < clusterCount; j++) {
+        const progress = Math.min(internalPhase * 3, 1);
+        const fromNode = clusterNodes[i];
+        const toNode = clusterNodes[j];
+
+        const dx = toNode.x - fromNode.x;
+        const dy = toNode.y - fromNode.y;
+
+        ctx.beginPath();
+        ctx.moveTo(fromNode.x, fromNode.y);
+        ctx.lineTo(fromNode.x + dx * progress, fromNode.y + dy * progress);
+        ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 1;
+  }
+
+  // Draw cluster nodes (on top of messages)
+  clusterNodes.forEach((node, i) => {
+    ctx.shadowColor = "#00D9A5";
+    ctx.shadowBlur = internalPhase >= 1 ? 12 : 6;
+    ctx.fillStyle = "#00D9A5";
+    ctx.beginPath();
+    ctx.arc(node.x, node.y, mobile ? 6 : 8, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.shadowBlur = 0;
+  });
+
+  // External broadcast (after internal consensus)
+  if (externalPhase > 0) {
+    ctx.strokeStyle = "#00D9A5";
+    ctx.lineWidth = 1.5;
+    ctx.globalAlpha = 0.5;
+
+    externalNodes.forEach((extNode, i) => {
+      const delay = i * 0.1;
+      const progress = Math.max(0, Math.min((externalPhase - delay) * 2, 1));
+
+      if (progress > 0) {
+        const dx = extNode.x - centerX;
+        const dy = extNode.y - centerY;
+
+        ctx.beginPath();
+        ctx.moveTo(centerX, centerY);
+        ctx.lineTo(centerX + dx * progress, centerY + dy * progress);
+        ctx.stroke();
+      }
+    });
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = 1;
+  }
+
+  // Phase indicator
+  const phaseY = offsetY + height - (mobile ? 25 : 30);
+  ctx.font = mobile ? "bold 7px monospace" : "bold 9px monospace";
+  ctx.textAlign = "center";
+
+  if (phase < 0.3) {
+    ctx.fillStyle = "#00D9A5";
+    ctx.fillText("Internal: ~5ms", centerX, phaseY);
+  } else {
+    ctx.fillStyle = "rgba(0, 217, 165, 0.6)";
+    ctx.fillText("Broadcast: 1 round", centerX, phaseY);
+  }
+
+  // Timing annotation
+  ctx.fillStyle = "rgba(255,255,255,0.3)";
+  ctx.font = mobile ? "5px system-ui" : "6px system-ui";
+  ctx.fillText("(vs N×N in traditional BFT)", centerX, phaseY + (mobile ? 10 : 12));
+}
