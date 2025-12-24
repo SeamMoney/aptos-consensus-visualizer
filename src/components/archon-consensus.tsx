@@ -7,12 +7,8 @@ import { useVisibility } from "@/hooks/useVisibility";
  * Archon Consensus Visualization - Redesigned
  *
  * Shows WHY a co-located cluster makes consensus faster:
- * - Side-by-side comparison: Traditional BFT vs Archon
- * - Geographic visualization of latency problem
- * - N×N communication vs cluster + broadcast
- *
- * Key insight: You can't reduce network latency (physics).
- * But you CAN reduce the NUMBER of round-trips.
+ * - Desktop: Side-by-side comparison (Traditional vs Archon)
+ * - Mobile: Stacked vertically for better readability
  */
 
 interface TraditionalValidator {
@@ -59,19 +55,19 @@ interface ClusterMessage {
 const PHASES = [
   {
     title: "Traditional BFT: The Problem",
-    desc: "Every validator must message every other. Intercontinental latency: 100-300ms per round. 3 rounds = slow blocks."
+    desc: "Every validator must message every other. Intercontinental latency: 100-300ms per round."
   },
   {
     title: "Archon Cluster Forms",
-    desc: "5 validators co-located in same datacenter. Internal latency: <5ms. They act as ONE 'super-validator'."
+    desc: "5 validators co-located in same datacenter. Internal latency: <5ms."
   },
   {
     title: "Fast Internal Consensus",
-    desc: "Cluster reaches BFT agreement in ~5ms (not 100-300ms). No waiting for distant validators."
+    desc: "Cluster reaches BFT agreement in ~5ms. No waiting for distant validators."
   },
   {
     title: "Single Broadcast to Network",
-    desc: "Cluster proposes as ONE entity. 5× fewer round-trips. Result: ~10ms blocks vs ~130ms traditional."
+    desc: "Cluster proposes as ONE entity. Result: ~10ms blocks vs ~130ms traditional."
   },
 ];
 
@@ -102,6 +98,7 @@ export const ArchonConsensus = memo(function ArchonConsensus() {
   const messageIdRef = useRef(0);
   const latencyCounterRef = useRef(0);
   const archonLatencyRef = useRef(0);
+  const lastWidthRef = useRef(0);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -133,58 +130,108 @@ export const ArchonConsensus = memo(function ArchonConsensus() {
       const mobile = width < 500;
       setIsMobile(mobile);
 
-      if (canvas.width !== Math.floor(width * dpr)) {
+      // Reinitialize if width changed significantly
+      const widthChanged = Math.abs(width - lastWidthRef.current) > 50;
+
+      if (canvas.width !== Math.floor(width * dpr) || widthChanged) {
         canvas.width = Math.floor(width * dpr);
         canvas.height = Math.floor(height * dpr);
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.scale(dpr, dpr);
+        lastWidthRef.current = width;
 
-        // Initialize traditional validators (left side)
-        const leftCenterX = width * 0.25;
-        const leftCenterY = height * 0.48;
-        const tradRadius = mobile ? 50 : 75;
+        if (mobile) {
+          // MOBILE: Stacked layout
+          // Traditional on top half
+          const topCenterX = width * 0.5;
+          const topCenterY = height * 0.22;
+          const tradRadius = 45;
 
-        traditionalValidatorsRef.current = CITIES.map((city, i) => {
-          const angle = (i / 6) * Math.PI * 2 - Math.PI / 2;
-          return {
-            id: i,
-            x: leftCenterX + Math.cos(angle) * tradRadius,
-            y: leftCenterY + Math.sin(angle) * tradRadius,
-            city: city.name,
-            color: city.color,
-          };
-        });
-
-        // Initialize Archon cluster (right side center)
-        const rightCenterX = width * 0.75;
-        const rightCenterY = height * 0.48;
-        const clusterRadius = mobile ? 20 : 28;
-
-        clusterNodesRef.current = [];
-        for (let i = 0; i < 5; i++) {
-          const angle = (i / 5) * Math.PI * 2 - Math.PI / 2;
-          clusterNodesRef.current.push({
-            id: i,
-            x: rightCenterX + Math.cos(angle) * clusterRadius,
-            y: rightCenterY + Math.sin(angle) * clusterRadius,
-            angle,
+          traditionalValidatorsRef.current = CITIES.map((city, i) => {
+            const angle = (i / 6) * Math.PI * 2 - Math.PI / 2;
+            return {
+              id: i,
+              x: topCenterX + Math.cos(angle) * tradRadius,
+              y: topCenterY + Math.sin(angle) * tradRadius,
+              city: city.name,
+              color: city.color,
+            };
           });
-        }
 
-        // Initialize external validators (ring around cluster)
-        const externalRadius = mobile ? 65 : 90;
-        const numExternal = mobile ? 8 : 12;
+          // Archon on bottom half
+          const bottomCenterX = width * 0.5;
+          const bottomCenterY = height * 0.68;
+          const clusterRadius = 18;
 
-        externalValidatorsRef.current = [];
-        for (let i = 0; i < numExternal; i++) {
-          const angle = (i / numExternal) * Math.PI * 2 - Math.PI / 2;
-          externalValidatorsRef.current.push({
-            id: i,
-            x: rightCenterX + Math.cos(angle) * externalRadius,
-            y: rightCenterY + Math.sin(angle) * externalRadius,
-            angle,
-            hasBlock: false,
+          clusterNodesRef.current = [];
+          for (let i = 0; i < 5; i++) {
+            const angle = (i / 5) * Math.PI * 2 - Math.PI / 2;
+            clusterNodesRef.current.push({
+              id: i,
+              x: bottomCenterX + Math.cos(angle) * clusterRadius,
+              y: bottomCenterY + Math.sin(angle) * clusterRadius,
+              angle,
+            });
+          }
+
+          const externalRadius = 55;
+          const numExternal = 8;
+          externalValidatorsRef.current = [];
+          for (let i = 0; i < numExternal; i++) {
+            const angle = (i / numExternal) * Math.PI * 2 - Math.PI / 2;
+            externalValidatorsRef.current.push({
+              id: i,
+              x: bottomCenterX + Math.cos(angle) * externalRadius,
+              y: bottomCenterY + Math.sin(angle) * externalRadius,
+              angle,
+              hasBlock: false,
+            });
+          }
+        } else {
+          // DESKTOP: Side-by-side layout
+          const leftCenterX = width * 0.25;
+          const leftCenterY = height * 0.45;
+          const tradRadius = 75;
+
+          traditionalValidatorsRef.current = CITIES.map((city, i) => {
+            const angle = (i / 6) * Math.PI * 2 - Math.PI / 2;
+            return {
+              id: i,
+              x: leftCenterX + Math.cos(angle) * tradRadius,
+              y: leftCenterY + Math.sin(angle) * tradRadius,
+              city: city.name,
+              color: city.color,
+            };
           });
+
+          const rightCenterX = width * 0.75;
+          const rightCenterY = height * 0.45;
+          const clusterRadius = 28;
+
+          clusterNodesRef.current = [];
+          for (let i = 0; i < 5; i++) {
+            const angle = (i / 5) * Math.PI * 2 - Math.PI / 2;
+            clusterNodesRef.current.push({
+              id: i,
+              x: rightCenterX + Math.cos(angle) * clusterRadius,
+              y: rightCenterY + Math.sin(angle) * clusterRadius,
+              angle,
+            });
+          }
+
+          const externalRadius = 90;
+          const numExternal = 12;
+          externalValidatorsRef.current = [];
+          for (let i = 0; i < numExternal; i++) {
+            const angle = (i / numExternal) * Math.PI * 2 - Math.PI / 2;
+            externalValidatorsRef.current.push({
+              id: i,
+              x: rightCenterX + Math.cos(angle) * externalRadius,
+              y: rightCenterY + Math.sin(angle) * externalRadius,
+              angle,
+              hasBlock: false,
+            });
+          }
         }
       }
 
@@ -192,13 +239,7 @@ export const ArchonConsensus = memo(function ArchonConsensus() {
       ctx.fillStyle = "#0a0a0b";
       ctx.fillRect(0, 0, width, height);
 
-      const leftCenterX = width * 0.25;
-      const leftCenterY = height * 0.48;
-      const rightCenterX = width * 0.75;
-      const rightCenterY = height * 0.48;
-      const midX = width * 0.5;
-
-      // Phase timer - faster animation
+      // Phase timer
       phaseTimerRef.current++;
       if (phaseTimerRef.current > 70) {
         phaseTimerRef.current = 0;
@@ -211,55 +252,63 @@ export const ArchonConsensus = memo(function ArchonConsensus() {
         externalValidatorsRef.current.forEach(v => v.hasBlock = false);
       }
 
-      // Update latency counters based on phase - faster
+      // Update latency counters
       if (currentPhase === 0) {
         latencyCounterRef.current = Math.min(latencyCounterRef.current + 3, 130);
       } else if (currentPhase >= 2) {
         archonLatencyRef.current = Math.min(archonLatencyRef.current + 0.8, 10);
       }
 
-      // Spawn traditional messages in phase 0
+      // Get centers based on layout
+      const tradCenterX = mobile ? width * 0.5 : width * 0.25;
+      const tradCenterY = mobile ? height * 0.22 : height * 0.45;
+      const archonCenterX = mobile ? width * 0.5 : width * 0.75;
+      const archonCenterY = mobile ? height * 0.68 : height * 0.45;
+
+      // Spawn traditional messages
       if (currentPhase === 0 && phaseTimerRef.current % 8 === 0) {
         const validators = traditionalValidatorsRef.current;
-        const fromIdx = Math.floor(Math.random() * validators.length);
-        let toIdx = Math.floor(Math.random() * validators.length);
-        while (toIdx === fromIdx) toIdx = Math.floor(Math.random() * validators.length);
-
-        traditionalMessagesRef.current.push({
-          id: messageIdRef.current++,
-          fromId: fromIdx,
-          toId: toIdx,
-          progress: 0,
-          color: validators[fromIdx].color,
-        });
+        if (validators.length > 0) {
+          const fromIdx = Math.floor(Math.random() * validators.length);
+          let toIdx = Math.floor(Math.random() * validators.length);
+          while (toIdx === fromIdx) toIdx = Math.floor(Math.random() * validators.length);
+          traditionalMessagesRef.current.push({
+            id: messageIdRef.current++,
+            fromId: fromIdx,
+            toId: toIdx,
+            progress: 0,
+            color: validators[fromIdx].color,
+          });
+        }
       }
 
-      // Spawn cluster messages in phase 2
+      // Spawn cluster messages
       if (currentPhase === 2 && phaseTimerRef.current % 4 === 0) {
         const cluster = clusterNodesRef.current;
-        const fromIdx = Math.floor(Math.random() * cluster.length);
-        let toIdx = Math.floor(Math.random() * cluster.length);
-        while (toIdx === fromIdx) toIdx = Math.floor(Math.random() * cluster.length);
-
-        clusterMessagesRef.current.push({
-          id: messageIdRef.current++,
-          fromX: cluster[fromIdx].x,
-          fromY: cluster[fromIdx].y,
-          toX: cluster[toIdx].x,
-          toY: cluster[toIdx].y,
-          progress: 0,
-          type: "internal",
-        });
+        if (cluster.length > 0) {
+          const fromIdx = Math.floor(Math.random() * cluster.length);
+          let toIdx = Math.floor(Math.random() * cluster.length);
+          while (toIdx === fromIdx) toIdx = Math.floor(Math.random() * cluster.length);
+          clusterMessagesRef.current.push({
+            id: messageIdRef.current++,
+            fromX: cluster[fromIdx].x,
+            fromY: cluster[fromIdx].y,
+            toX: cluster[toIdx].x,
+            toY: cluster[toIdx].y,
+            progress: 0,
+            type: "internal",
+          });
+        }
       }
 
-      // Spawn external messages in phase 3
+      // Spawn external messages
       if (currentPhase === 3 && phaseTimerRef.current === 10) {
         externalValidatorsRef.current.forEach((ext, i) => {
           setTimeout(() => {
             clusterMessagesRef.current.push({
               id: messageIdRef.current++,
-              fromX: rightCenterX,
-              fromY: rightCenterY,
+              fromX: archonCenterX,
+              fromY: archonCenterY,
               toX: ext.x,
               toY: ext.y,
               progress: 0,
@@ -269,34 +318,149 @@ export const ArchonConsensus = memo(function ArchonConsensus() {
         });
       }
 
-      // Draw divider
-      ctx.strokeStyle = "rgba(255,255,255,0.1)";
-      ctx.lineWidth = 1;
-      ctx.setLineDash([4, 4]);
-      ctx.beginPath();
-      ctx.moveTo(midX, 30);
-      ctx.lineTo(midX, height - 60);
-      ctx.stroke();
-      ctx.setLineDash([]);
+      if (mobile) {
+        // === MOBILE: STACKED LAYOUT ===
 
-      // Draw "VS" label
-      ctx.fillStyle = "rgba(255,255,255,0.3)";
-      ctx.font = mobile ? "bold 10px system-ui" : "bold 12px system-ui";
-      ctx.textAlign = "center";
-      ctx.fillText("vs", midX, height * 0.48);
+        // Horizontal divider
+        const dividerY = height * 0.44;
+        ctx.strokeStyle = "rgba(255,255,255,0.15)";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(20, dividerY);
+        ctx.lineTo(width - 20, dividerY);
+        ctx.stroke();
+        ctx.setLineDash([]);
 
-      // === LEFT SIDE: Traditional BFT ===
+        // "VS" in middle
+        ctx.fillStyle = "rgba(255,255,255,0.4)";
+        ctx.font = "bold 10px system-ui";
+        ctx.textAlign = "center";
+        ctx.fillText("vs", width / 2, dividerY + 4);
 
-      // Title
-      ctx.fillStyle = currentPhase === 0 ? "#EF4444" : "rgba(255,255,255,0.5)";
-      ctx.font = mobile ? "bold 8px system-ui" : "bold 10px system-ui";
-      ctx.textAlign = "center";
-      ctx.fillText("TRADITIONAL BFT", leftCenterX, mobile ? 16 : 22);
+        // TOP: Traditional BFT
+        ctx.fillStyle = currentPhase === 0 ? "#EF4444" : "rgba(255,255,255,0.5)";
+        ctx.font = "bold 9px system-ui";
+        ctx.textAlign = "center";
+        ctx.fillText("TRADITIONAL BFT", tradCenterX, 14);
+
+        // BOTTOM: Archon
+        ctx.fillStyle = currentPhase >= 1 ? "#00D9A5" : "rgba(255,255,255,0.5)";
+        ctx.fillText("ARCHON", archonCenterX, dividerY + 18);
+
+        // Traditional latency bar (top section)
+        const tradBarY = height * 0.38;
+        const barWidth = width * 0.5;
+        const barHeight = 8;
+
+        ctx.fillStyle = "rgba(255,255,255,0.1)";
+        ctx.fillRect(tradCenterX - barWidth / 2, tradBarY, barWidth, barHeight);
+        const tradFill = (latencyCounterRef.current / 130) * barWidth;
+        ctx.fillStyle = "#EF4444";
+        ctx.fillRect(tradCenterX - barWidth / 2, tradBarY, tradFill, barHeight);
+
+        ctx.fillStyle = "#EF4444";
+        ctx.font = "bold 11px monospace";
+        ctx.fillText(`${Math.floor(latencyCounterRef.current)}ms`, tradCenterX, tradBarY - 6);
+
+        // Archon latency bar (bottom section)
+        const archonBarY = height * 0.88;
+        ctx.fillStyle = "rgba(255,255,255,0.1)";
+        ctx.fillRect(archonCenterX - barWidth / 2, archonBarY, barWidth, barHeight);
+        const archonFill = (archonLatencyRef.current / 10) * barWidth;
+        ctx.fillStyle = "#00D9A5";
+        ctx.fillRect(archonCenterX - barWidth / 2, archonBarY, archonFill, barHeight);
+
+        ctx.fillStyle = "#00D9A5";
+        ctx.font = "bold 11px monospace";
+        ctx.fillText(`${Math.floor(archonLatencyRef.current)}ms`, archonCenterX, archonBarY - 6);
+
+        // Cluster label
+        if (currentPhase >= 1) {
+          ctx.fillStyle = "#00D9A5" + "80";
+          ctx.font = "bold 6px system-ui";
+          ctx.fillText("SAME DATACENTER", archonCenterX, archonCenterY - 30);
+        }
+
+      } else {
+        // === DESKTOP: SIDE-BY-SIDE LAYOUT ===
+
+        // Vertical divider
+        const midX = width * 0.5;
+        ctx.strokeStyle = "rgba(255,255,255,0.1)";
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(midX, 30);
+        ctx.lineTo(midX, height - 50);
+        ctx.stroke();
+        ctx.setLineDash([]);
+
+        // "VS"
+        ctx.fillStyle = "rgba(255,255,255,0.3)";
+        ctx.font = "bold 12px system-ui";
+        ctx.textAlign = "center";
+        ctx.fillText("vs", midX, height * 0.45);
+
+        // Titles
+        ctx.fillStyle = currentPhase === 0 ? "#EF4444" : "rgba(255,255,255,0.5)";
+        ctx.font = "bold 10px system-ui";
+        ctx.fillText("TRADITIONAL BFT", tradCenterX, 22);
+
+        ctx.fillStyle = currentPhase >= 1 ? "#00D9A5" : "rgba(255,255,255,0.5)";
+        ctx.fillText("ARCHON", archonCenterX, 22);
+
+        // Latency bars
+        const barY = height - 45;
+        const barWidth = width * 0.2;
+        const barHeight = 12;
+
+        // Traditional bar
+        ctx.fillStyle = "rgba(255,255,255,0.1)";
+        ctx.fillRect(tradCenterX - barWidth / 2, barY, barWidth, barHeight);
+        const tradFill = (latencyCounterRef.current / 130) * barWidth;
+        ctx.fillStyle = "#EF4444";
+        ctx.fillRect(tradCenterX - barWidth / 2, barY, tradFill, barHeight);
+
+        ctx.fillStyle = "#EF4444";
+        ctx.font = "bold 12px monospace";
+        ctx.fillText(`${Math.floor(latencyCounterRef.current)}ms`, tradCenterX, barY - 5);
+
+        if (currentPhase === 0 && latencyCounterRef.current < 130) {
+          ctx.fillStyle = "rgba(255,255,255,0.4)";
+          ctx.font = "8px system-ui";
+          ctx.fillText("Waiting for all validators...", tradCenterX, barY + barHeight + 14);
+        }
+
+        // Archon bar
+        ctx.fillStyle = "rgba(255,255,255,0.1)";
+        ctx.fillRect(archonCenterX - barWidth / 2, barY, barWidth, barHeight);
+        const archonFill = (archonLatencyRef.current / 10) * barWidth;
+        ctx.fillStyle = "#00D9A5";
+        ctx.fillRect(archonCenterX - barWidth / 2, barY, archonFill, barHeight);
+
+        ctx.fillStyle = "#00D9A5";
+        ctx.font = "bold 12px monospace";
+        ctx.fillText(`${Math.floor(archonLatencyRef.current)}ms`, archonCenterX, barY - 5);
+
+        if (currentPhase >= 2) {
+          ctx.fillStyle = "rgba(255,255,255,0.4)";
+          ctx.font = "8px system-ui";
+          ctx.fillText(currentPhase === 2 ? "Internal consensus: ~5ms" : "Cluster broadcasts as ONE", archonCenterX, barY + barHeight + 14);
+        }
+
+        // Cluster label
+        if (currentPhase >= 1) {
+          ctx.fillStyle = "#00D9A5" + "80";
+          ctx.font = "bold 7px system-ui";
+          ctx.fillText("SAME DATACENTER", archonCenterX, archonCenterY - 50);
+        }
+      }
 
       // Draw traditional validators
       const tradValidators = traditionalValidatorsRef.current;
 
-      // Draw connection lines (show N×N complexity)
+      // Connection lines
       if (currentPhase === 0) {
         ctx.strokeStyle = "rgba(255,255,255,0.05)";
         ctx.lineWidth = 0.5;
@@ -310,7 +474,7 @@ export const ArchonConsensus = memo(function ArchonConsensus() {
         }
       }
 
-      // Draw validators with city labels
+      // Validators with city labels
       tradValidators.forEach((v) => {
         const size = mobile ? 5 : 7;
         const isActive = currentPhase === 0;
@@ -320,81 +484,40 @@ export const ArchonConsensus = memo(function ArchonConsensus() {
         ctx.arc(v.x, v.y, size, 0, Math.PI * 2);
         ctx.fill();
 
-        // City label
         ctx.fillStyle = isActive ? v.color : "rgba(255,255,255,0.3)";
         ctx.font = mobile ? "5px monospace" : "7px monospace";
         ctx.textAlign = "center";
         ctx.fillText(v.city, v.x, v.y + size + (mobile ? 8 : 12));
       });
 
-      // Draw and update traditional messages
+      // Traditional messages
       traditionalMessagesRef.current = traditionalMessagesRef.current.filter((msg) => {
-        msg.progress += 0.015; // Slow!
-
+        msg.progress += 0.015;
         const from = tradValidators[msg.fromId];
         const to = tradValidators[msg.toId];
+        if (!from || !to) return false;
         const x = from.x + (to.x - from.x) * msg.progress;
         const y = from.y + (to.y - from.y) * msg.progress;
-        const size = mobile ? 2 : 3;
 
         ctx.fillStyle = msg.color + "80";
         ctx.beginPath();
-        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.arc(x, y, mobile ? 2 : 3, 0, Math.PI * 2);
         ctx.fill();
 
         return msg.progress < 1;
       });
 
-      // Traditional latency bar
-      const tradBarY = height - (mobile ? 45 : 55);
-      const barWidth = width * 0.2;
-      const barHeight = mobile ? 8 : 12;
-
-      ctx.fillStyle = "rgba(255,255,255,0.1)";
-      ctx.fillRect(leftCenterX - barWidth / 2, tradBarY, barWidth, barHeight);
-
-      const tradFill = (latencyCounterRef.current / 130) * barWidth;
-      ctx.fillStyle = "#EF4444";
-      ctx.fillRect(leftCenterX - barWidth / 2, tradBarY, tradFill, barHeight);
-
-      ctx.fillStyle = "#EF4444";
-      ctx.font = mobile ? "bold 10px monospace" : "bold 12px monospace";
-      ctx.textAlign = "center";
-      ctx.fillText(`${Math.floor(latencyCounterRef.current)}ms`, leftCenterX, tradBarY - 5);
-
-      // "Waiting for..." label
-      if (currentPhase === 0 && latencyCounterRef.current < 130) {
-        ctx.fillStyle = "rgba(255,255,255,0.4)";
-        ctx.font = mobile ? "6px system-ui" : "8px system-ui";
-        ctx.fillText("Waiting for all validators...", leftCenterX, tradBarY + barHeight + (mobile ? 10 : 14));
-      }
-
-      // === RIGHT SIDE: Archon ===
-
-      // Title
-      ctx.fillStyle = currentPhase >= 1 ? "#00D9A5" : "rgba(255,255,255,0.5)";
-      ctx.font = mobile ? "bold 8px system-ui" : "bold 10px system-ui";
-      ctx.textAlign = "center";
-      ctx.fillText("ARCHON", rightCenterX, mobile ? 16 : 22);
-
-      // Draw cluster boundary
-      const clusterRadius = mobile ? 32 : 45;
+      // Cluster boundary
+      const clusterRadius = mobile ? 30 : 45;
       const clusterActive = currentPhase >= 1;
 
       ctx.strokeStyle = clusterActive ? "#00D9A5" + "60" : "rgba(255,255,255,0.1)";
       ctx.lineWidth = clusterActive ? 2 : 1;
       ctx.beginPath();
-      ctx.arc(rightCenterX, rightCenterY, clusterRadius, 0, Math.PI * 2);
+      ctx.arc(archonCenterX, archonCenterY, clusterRadius, 0, Math.PI * 2);
       ctx.stroke();
 
-      // "Same Datacenter" label
-      if (clusterActive) {
-        ctx.fillStyle = "#00D9A5" + "80";
-        ctx.font = mobile ? "bold 5px system-ui" : "bold 7px system-ui";
-        ctx.fillText("SAME DATACENTER", rightCenterX, rightCenterY - clusterRadius - (mobile ? 8 : 12));
-      }
-
-      // Draw cluster internal connections
+      // Cluster internal connections
       const cluster = clusterNodesRef.current;
       if (currentPhase === 2) {
         ctx.strokeStyle = "#00D9A5" + "30";
@@ -409,12 +532,11 @@ export const ArchonConsensus = memo(function ArchonConsensus() {
         }
       }
 
-      // Draw cluster nodes
-      cluster.forEach((node, i) => {
+      // Cluster nodes
+      cluster.forEach((node) => {
         const size = mobile ? 5 : 6;
         const isActive = currentPhase >= 1;
 
-        // Glow for active
         if (isActive && currentPhase === 2) {
           const glow = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, size * 2);
           glow.addColorStop(0, "#00D9A5" + "40");
@@ -431,24 +553,17 @@ export const ArchonConsensus = memo(function ArchonConsensus() {
         ctx.fill();
       });
 
-      // Draw external validator ring
-      const externalRadius = mobile ? 65 : 90;
+      // External validator ring
+      const externalRadius = mobile ? 55 : 90;
       ctx.strokeStyle = "rgba(255,255,255,0.08)";
       ctx.lineWidth = 1;
       ctx.setLineDash([2, 4]);
       ctx.beginPath();
-      ctx.arc(rightCenterX, rightCenterY, externalRadius, 0, Math.PI * 2);
+      ctx.arc(archonCenterX, archonCenterY, externalRadius, 0, Math.PI * 2);
       ctx.stroke();
       ctx.setLineDash([]);
 
-      // "Global Network" label
-      if (currentPhase >= 3) {
-        ctx.fillStyle = "rgba(255,255,255,0.4)";
-        ctx.font = mobile ? "5px system-ui" : "6px system-ui";
-        ctx.fillText("GLOBAL NETWORK", rightCenterX, rightCenterY + externalRadius + (mobile ? 10 : 14));
-      }
-
-      // Draw external validators
+      // External validators
       externalValidatorsRef.current.forEach((ext) => {
         const size = mobile ? 3 : 4;
         const isActive = currentPhase >= 3;
@@ -459,21 +574,19 @@ export const ArchonConsensus = memo(function ArchonConsensus() {
         ctx.fill();
       });
 
-      // Draw and update cluster messages
+      // Cluster messages
       clusterMessagesRef.current = clusterMessagesRef.current.filter((msg) => {
-        const speed = msg.type === "internal" ? 0.15 : 0.04; // Internal is FAST
+        const speed = msg.type === "internal" ? 0.15 : 0.04;
         msg.progress += speed;
 
         const x = msg.fromX + (msg.toX - msg.fromX) * msg.progress;
         const y = msg.fromY + (msg.toY - msg.fromY) * msg.progress;
-        const size = mobile ? 2 : 3;
 
         ctx.fillStyle = msg.type === "internal" ? "#00D9A5" : "#3B82F6";
         ctx.beginPath();
-        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.arc(x, y, mobile ? 2 : 3, 0, Math.PI * 2);
         ctx.fill();
 
-        // Mark external validator as received
         if (msg.type === "external" && msg.progress >= 0.95) {
           externalValidatorsRef.current.forEach(ext => {
             if (Math.abs(ext.x - msg.toX) < 5 && Math.abs(ext.y - msg.toY) < 5) {
@@ -484,35 +597,6 @@ export const ArchonConsensus = memo(function ArchonConsensus() {
 
         return msg.progress < 1;
       });
-
-      // Archon latency bar
-      ctx.fillStyle = "rgba(255,255,255,0.1)";
-      ctx.fillRect(rightCenterX - barWidth / 2, tradBarY, barWidth, barHeight);
-
-      const archonFill = (archonLatencyRef.current / 10) * barWidth;
-      ctx.fillStyle = "#00D9A5";
-      ctx.fillRect(rightCenterX - barWidth / 2, tradBarY, archonFill, barHeight);
-
-      ctx.fillStyle = "#00D9A5";
-      ctx.font = mobile ? "bold 10px monospace" : "bold 12px monospace";
-      ctx.textAlign = "center";
-      ctx.fillText(`${Math.floor(archonLatencyRef.current)}ms`, rightCenterX, tradBarY - 5);
-
-      // "Cluster ready" label
-      if (currentPhase >= 2) {
-        ctx.fillStyle = "rgba(255,255,255,0.4)";
-        ctx.font = mobile ? "6px system-ui" : "8px system-ui";
-        ctx.fillText(currentPhase === 2 ? "Internal consensus: ~5ms" : "Cluster broadcasts as ONE", rightCenterX, tradBarY + barHeight + (mobile ? 10 : 14));
-      }
-
-      // Bottom comparison
-      if (currentPhase === 3 && phaseTimerRef.current > 60) {
-        const compY = height - (mobile ? 18 : 22);
-        ctx.fillStyle = "#00D9A5";
-        ctx.font = mobile ? "bold 7px system-ui" : "bold 9px system-ui";
-        ctx.textAlign = "center";
-        ctx.fillText("13× FASTER: Fewer round-trips, not faster light", width / 2, compY);
-      }
 
       animationRef.current = requestAnimationFrame(render);
     };
@@ -530,14 +614,14 @@ export const ArchonConsensus = memo(function ArchonConsensus() {
               className="px-1.5 py-0.5 rounded text-[8px] sm:text-[10px] font-bold"
               style={{ backgroundColor: "#F59E0B", color: "#000" }}
             >
-              COMING 2026
+              2026
             </span>
             <h3 className="text-xs sm:text-sm font-bold" style={{ color: "var(--chrome-200)" }}>
-              Archon: The Innovation
+              Archon: Primary-Proxy Consensus
             </h3>
           </div>
           <p className="text-[9px] sm:text-xs" style={{ color: "var(--chrome-600)" }}>
-            {isMobile ? "Why co-located clusters = 13× faster" : "Why co-located validator clusters enable 13× faster consensus"}
+            {isMobile ? "Co-located cluster = 13× faster" : "Co-located validator cluster enables 13× faster consensus"}
           </p>
         </div>
       </div>
@@ -545,7 +629,7 @@ export const ArchonConsensus = memo(function ArchonConsensus() {
       <canvas
         ref={canvasRef}
         className="w-full rounded"
-        style={{ height: isMobile ? "240px" : "320px" }}
+        style={{ height: isMobile ? "320px" : "300px" }}
       />
 
       {/* Phase explanation */}
@@ -569,25 +653,20 @@ export const ArchonConsensus = memo(function ArchonConsensus() {
       {/* Key insight */}
       <div className="mt-2 p-2 rounded bg-gradient-to-r from-amber-500/10 to-transparent border border-amber-500/20">
         <p className="text-[9px] sm:text-xs" style={{ color: "var(--chrome-400)" }}>
-          <span className="font-bold" style={{ color: "#F59E0B" }}>Key Insight:</span>
-          {isMobile
-            ? " You can't speed up light. But you CAN reduce round-trips by delegating internal consensus to a co-located cluster."
-            : " You can't reduce network latency (physics-limited). But you CAN reduce the NUMBER of round-trips. The cluster absorbs N×N validator communication into fast internal consensus, then broadcasts as ONE entity."
-          }
+          <span className="font-bold" style={{ color: "#F59E0B" }}>Key:</span>
+          {" You can't speed up light. But you CAN reduce round-trips by using a co-located cluster."}
         </p>
       </div>
 
       {/* Comparison stats */}
       <div className="mt-2 grid grid-cols-2 gap-2">
         <div className="p-2 rounded bg-red-500/10 border border-red-500/20 text-center">
-          <div className="text-xs sm:text-sm font-bold" style={{ color: "#EF4444" }}>Traditional</div>
-          <div className="text-lg sm:text-xl font-bold" style={{ color: "#EF4444" }}>~130ms</div>
-          <div className="text-[8px] sm:text-[10px]" style={{ color: "var(--chrome-500)" }}>N×N messages, 3 rounds</div>
+          <div className="text-[10px] sm:text-xs font-bold" style={{ color: "#EF4444" }}>Traditional</div>
+          <div className="text-base sm:text-xl font-bold" style={{ color: "#EF4444" }}>~130ms</div>
         </div>
         <div className="p-2 rounded bg-emerald-500/10 border border-emerald-500/20 text-center">
-          <div className="text-xs sm:text-sm font-bold" style={{ color: "#00D9A5" }}>Archon</div>
-          <div className="text-lg sm:text-xl font-bold" style={{ color: "#00D9A5" }}>~10ms</div>
-          <div className="text-[8px] sm:text-[10px]" style={{ color: "var(--chrome-500)" }}>Cluster + 1 broadcast</div>
+          <div className="text-[10px] sm:text-xs font-bold" style={{ color: "#00D9A5" }}>Archon</div>
+          <div className="text-base sm:text-xl font-bold" style={{ color: "#00D9A5" }}>~10ms</div>
         </div>
       </div>
     </div>

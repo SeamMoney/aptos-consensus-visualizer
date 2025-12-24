@@ -32,7 +32,7 @@ const PROTOCOLS: ConsensusProtocol[] = [
   { name: "Archon", blockTime: 10, finality: 30, color: "#00D9A5", year: "2026", innovation: "Co-located cluster", chain: "aptos" },
   // Competitors
   { name: "Solana Tower", blockTime: 400, finality: 12800, color: "#9945FF", year: "Current", innovation: "PoH + 32-layer", chain: "solana" },
-  { name: "Sui Mysticeti", blockTime: 280, finality: 350, color: "#6FBCF0", year: "2025", innovation: "DAG parallel", chain: "sui" },
+  { name: "Sui Mysticeti", blockTime: 180, finality: 250, color: "#6FBCF0", year: "2025", innovation: "DAG parallel", chain: "sui" },
 ];
 
 const APTOS_PROTOCOLS = PROTOCOLS.filter(p => p.chain === "aptos");
