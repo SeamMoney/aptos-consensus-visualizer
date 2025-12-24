@@ -320,37 +320,48 @@ export const BlockSTM = memo(function BlockSTM({ tps }: BlockSTMProps) {
 
       // ===== MULTI-VERSION MEMORY (Right side) =====
       const memX = timelineWidth + 25;
-      const memWidth = width - memX - 15;
+      const memWidth = width - memX - 20;
+      const maxRightEdge = width - 15;
 
-      // Section header
+      // Section header - truncate if too long
       ctx.fillStyle = "#3B82F6";
       ctx.font = "bold 11px system-ui";
       ctx.textAlign = "left";
-      ctx.fillText("MULTI-VERSION DATA STRUCTURE", memX, 30);
+      const headerText = memWidth > 180 ? "MULTI-VERSION DATA STRUCTURE" : "MVCC DATA";
+      ctx.fillText(headerText, memX, 30);
 
       // Draw memory visualization
       const memStartY = 55;
       const rowHeight = 50;
 
+      // Calculate box dimensions based on available width
+      const boxGap = 4;
+      const maxVersionsToShow = Math.min(4, Math.floor((memWidth - 10) / 40));
+      const boxWidth = Math.min(38, (memWidth - (maxVersionsToShow - 1) * boxGap) / maxVersionsToShow);
+      const boxHeight = 24;
+
       memoryRef.current.forEach((mem, idx) => {
         const y = memStartY + idx * rowHeight;
 
-        // Key name
+        // Key name - truncate if needed
         ctx.fillStyle = mem.color;
-        ctx.font = "bold 10px monospace";
+        ctx.font = "bold 9px monospace";
         ctx.textAlign = "left";
-        ctx.fillText(mem.name, memX, y + 12);
+        const keyName = memWidth < 150 ? mem.name.split("_")[0] : mem.name;
+        ctx.fillText(keyName, memX, y + 10);
 
-        // Version boxes
-        const boxWidth = 42;
-        const boxHeight = 26;
-        const boxGap = 6;
+        // Version boxes - only show last N versions that fit
+        const versionsToShow = mem.versions.slice(-maxVersionsToShow);
         const boxStartX = memX;
 
-        mem.versions.forEach((ver, vIdx) => {
+        versionsToShow.forEach((ver, vIdx) => {
           const bx = boxStartX + vIdx * (boxWidth + boxGap);
-          const by = y + 18;
-          const isLatest = vIdx === mem.versions.length - 1;
+
+          // Don't draw if it would go past the edge
+          if (bx + boxWidth > maxRightEdge) return;
+
+          const by = y + 16;
+          const isLatest = vIdx === versionsToShow.length - 1;
 
           // Box
           ctx.fillStyle = isLatest ? mem.color + "30" : "rgba(255,255,255,0.05)";
@@ -363,35 +374,49 @@ export const BlockSTM = memo(function BlockSTM({ tps }: BlockSTMProps) {
 
           // Version label
           ctx.fillStyle = isLatest ? "#fff" : "rgba(255,255,255,0.5)";
-          ctx.font = isLatest ? "bold 9px monospace" : "9px monospace";
+          ctx.font = isLatest ? "bold 8px monospace" : "8px monospace";
           ctx.textAlign = "center";
-          ctx.fillText(`v${ver.version}`, bx + boxWidth / 2, by + 11);
+          ctx.fillText(`v${ver.version}`, bx + boxWidth / 2, by + 10);
 
           // TX that wrote it
           ctx.fillStyle = "rgba(255,255,255,0.4)";
-          ctx.font = "7px monospace";
-          ctx.fillText(ver.txId === 0 ? "init" : `TX${ver.txId}`, bx + boxWidth / 2, by + 21);
+          ctx.font = "6px monospace";
+          const txLabel = ver.txId === 0 ? "init" : `TX${ver.txId}`;
+          ctx.fillText(txLabel, bx + boxWidth / 2, by + 19);
 
           // Arrow to next
-          if (vIdx < mem.versions.length - 1) {
-            ctx.strokeStyle = "rgba(255,255,255,0.2)";
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(bx + boxWidth + 2, by + boxHeight / 2);
-            ctx.lineTo(bx + boxWidth + boxGap - 2, by + boxHeight / 2);
-            ctx.stroke();
+          if (vIdx < versionsToShow.length - 1) {
+            const nextBx = boxStartX + (vIdx + 1) * (boxWidth + boxGap);
+            if (nextBx + boxWidth <= maxRightEdge) {
+              ctx.strokeStyle = "rgba(255,255,255,0.2)";
+              ctx.lineWidth = 1;
+              ctx.beginPath();
+              ctx.moveTo(bx + boxWidth + 1, by + boxHeight / 2);
+              ctx.lineTo(bx + boxWidth + boxGap - 1, by + boxHeight / 2);
+              ctx.stroke();
+            }
           }
         });
       });
 
-      // MVCC explanation
-      const explainY = memStartY + memoryRef.current.length * rowHeight + 10;
-      ctx.fillStyle = "rgba(255,255,255,0.4)";
-      ctx.font = "9px monospace";
-      ctx.textAlign = "left";
-      ctx.fillText("• TXs read from specific versions", memX, explainY);
-      ctx.fillText("• Writes create new versions", memX, explainY + 14);
-      ctx.fillText("• Conflicts: read version < current", memX, explainY + 28);
+      // MVCC explanation - only show if there's room
+      const explainY = memStartY + memoryRef.current.length * rowHeight + 5;
+      if (explainY < height - 40) {
+        ctx.fillStyle = "rgba(255,255,255,0.4)";
+        ctx.font = "8px monospace";
+        ctx.textAlign = "left";
+
+        // Truncate text to fit within bounds
+        const explainTexts = memWidth > 180
+          ? ["• TXs read from specific versions", "• Writes create new versions", "• Conflicts: read version < current"]
+          : ["• Read specific versions", "• Writes create versions", "• Conflicts → retry"];
+
+        explainTexts.forEach((text, i) => {
+          if (explainY + i * 12 < height - 10) {
+            ctx.fillText(text, memX, explainY + i * 12);
+          }
+        });
+      }
 
       // Update stats
       if (newCommits > 0 || newConflicts > 0) {

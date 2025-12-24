@@ -152,41 +152,60 @@ export const BlockStream = memo(function BlockStream() {
       ctx.fillStyle = "#141416";
       ctx.fillRect(0, 0, width, height);
 
-      const cellW = width / COLS;
-      const cellH = height / ROWS;
+      // Calculate cell size - ensure square cells
+      const rawCellW = width / COLS;
+      const rawCellH = height / ROWS;
+
+      // Use square cells based on the smaller dimension
+      const cellSize = Math.min(rawCellW, rawCellH);
       const gap = 1;
 
-      // Find hovered cell
-      const hoveredCol = Math.floor(mouseRef.current.x / cellW);
-      const hoveredRow = Math.floor(mouseRef.current.y / cellH);
+      // Calculate actual grid dimensions with square cells
+      const actualGridWidth = cellSize * COLS;
+      const actualGridHeight = cellSize * ROWS;
+
+      // Center the grid if there's extra space
+      const offsetX = (width - actualGridWidth) / 2;
+      const offsetY = (height - actualGridHeight) / 2;
+
+      // Find hovered cell (accounting for offset)
+      const adjustedMouseX = mouseRef.current.x - offsetX;
+      const adjustedMouseY = mouseRef.current.y - offsetY;
+      const hoveredCol = Math.floor(adjustedMouseX / cellSize);
+      const hoveredRow = Math.floor(adjustedMouseY / cellSize);
       let currentHovered: GridBlock | null = null;
 
       // Draw blocks
       for (let r = 0; r < ROWS; r++) {
         for (let c = 0; c < COLS; c++) {
           const block = gridRef.current[r]?.[c];
+
+          const x = offsetX + c * cellSize + gap;
+          const y = offsetY + r * cellSize + gap;
+          const w = cellSize - gap * 2;
+          const h = cellSize - gap * 2;
+
           if (!block || block.timestamp === 0) {
             ctx.fillStyle = "#1a1a1d";
-            ctx.fillRect(c * cellW + gap, r * cellH + gap, cellW - gap * 2, cellH - gap * 2);
+            ctx.fillRect(x, y, w, h);
             continue;
           }
 
-          const x = c * cellW + gap;
-          const y = r * cellH + gap;
-          const w = cellW - gap * 2;
-          const h = cellH - gap * 2;
-
-          const isHovered = r === hoveredRow && c === hoveredCol;
+          const isHovered = r === hoveredRow && c === hoveredCol &&
+                           hoveredCol >= 0 && hoveredCol < COLS &&
+                           hoveredRow >= 0 && hoveredRow < ROWS;
           if (isHovered) currentHovered = block;
 
           // Block color based on tx count
           ctx.fillStyle = getBlockColor(block.txCount);
           ctx.fillRect(x, y, w, h);
 
-          // Show tx count inside block if there's space
-          if (w >= 12 && h >= 10 && block.txCount > 0) {
+          // Always show tx count inside block if there's any count
+          if (block.txCount > 0) {
             ctx.fillStyle = getTextColor(block.txCount);
-            ctx.font = `bold ${Math.min(9, h - 4)}px monospace`;
+            // Adaptive font size based on cell size, minimum 6px
+            const fontSize = Math.max(6, Math.min(9, w - 4));
+            ctx.font = `bold ${fontSize}px monospace`;
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
             ctx.fillText(String(block.txCount), x + w / 2, y + h / 2);

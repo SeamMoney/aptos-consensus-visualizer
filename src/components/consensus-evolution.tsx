@@ -193,10 +193,10 @@ export const ConsensusEvolution = memo(function ConsensusEvolution() {
         ctx.setLineDash([]);
 
         // Draw Archon timeline section (bottom)
-        drawArchonTimelineSection(ctx, 0, dividerY + 5, width, height - dividerY - 45, padding, frame, mobile, archonProgressRef.current, mysticetiLatencyRef.current);
+        drawArchonTimelineSection(ctx, 0, dividerY + 5, width, height - dividerY - 55, padding, frame, mobile, archonProgressRef.current, mysticetiLatencyRef.current);
 
         // Latency comparison at bottom
-        const barY = height - 35;
+        const barY = height - 40;
         drawLatencyComparison(ctx, width, barY, mysticetiLatencyRef.current, archonProgressRef.current * 10, mobile);
 
       } else {
@@ -216,10 +216,10 @@ export const ConsensusEvolution = memo(function ConsensusEvolution() {
         ctx.setLineDash([]);
 
         // Draw Archon timeline section (right)
-        drawArchonTimelineSection(ctx, halfW, 0, halfW, height - 70, padding, frame, mobile, archonProgressRef.current, mysticetiLatencyRef.current);
+        drawArchonTimelineSection(ctx, halfW, 0, halfW, height - 80, padding, frame, mobile, archonProgressRef.current, mysticetiLatencyRef.current);
 
         // Latency comparison at bottom
-        const barY = height - 50;
+        const barY = height - 55;
         drawLatencyComparison(ctx, width, barY, mysticetiLatencyRef.current, archonProgressRef.current * 10, mobile);
       }
 
@@ -256,7 +256,7 @@ export const ConsensusEvolution = memo(function ConsensusEvolution() {
       <canvas
         ref={canvasRef}
         className="w-full rounded"
-        style={{ height: isMobile ? "400px" : "340px" }}
+        style={{ height: isMobile ? "440px" : "360px" }}
       />
 
       {/* Protocol comparison */}
