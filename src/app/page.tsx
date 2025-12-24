@@ -21,6 +21,7 @@ import { MoveVMPipeline } from "@/components/move-vm-pipeline";
 import { LoaderV2Parallel } from "@/components/loader-v2-parallel";
 import { LoaderV2Caching } from "@/components/loader-v2-caching";
 import { ArchonConsensus } from "@/components/archon-consensus";
+import { ConsensusEvolution } from "@/components/consensus-evolution";
 import { useAptosStream } from "@/hooks/useAptosStream";
 
 export default function Home() {
@@ -236,6 +237,11 @@ export default function Home() {
         {/* Archon Consensus - Primary-Proxy Leader */}
         <section className="mb-4">
           <ArchonConsensus />
+        </section>
+
+        {/* Consensus Evolution Comparison */}
+        <section className="mb-4">
+          <ConsensusEvolution />
         </section>
 
         {/* Zaptos Parallel Pipeline */}

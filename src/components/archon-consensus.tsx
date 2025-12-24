@@ -198,9 +198,9 @@ export const ArchonConsensus = memo(function ArchonConsensus() {
       const rightCenterY = height * 0.48;
       const midX = width * 0.5;
 
-      // Phase timer
+      // Phase timer - faster animation
       phaseTimerRef.current++;
-      if (phaseTimerRef.current > 120) {
+      if (phaseTimerRef.current > 70) {
         phaseTimerRef.current = 0;
         const nextPhase = (currentPhase + 1) % 4;
         setCurrentPhase(nextPhase);
@@ -211,11 +211,11 @@ export const ArchonConsensus = memo(function ArchonConsensus() {
         externalValidatorsRef.current.forEach(v => v.hasBlock = false);
       }
 
-      // Update latency counters based on phase
+      // Update latency counters based on phase - faster
       if (currentPhase === 0) {
-        latencyCounterRef.current = Math.min(latencyCounterRef.current + 2, 130);
+        latencyCounterRef.current = Math.min(latencyCounterRef.current + 3, 130);
       } else if (currentPhase >= 2) {
-        archonLatencyRef.current = Math.min(archonLatencyRef.current + 0.5, 10);
+        archonLatencyRef.current = Math.min(archonLatencyRef.current + 0.8, 10);
       }
 
       // Spawn traditional messages in phase 0
