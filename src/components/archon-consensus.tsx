@@ -4,24 +4,38 @@ import { useRef, useEffect, useState, memo } from "react";
 import { useVisibility } from "@/hooks/useVisibility";
 
 /**
- * Archon Consensus Visualization
+ * Archon Consensus Visualization - Redesigned
  *
- * Archon introduces a Primary-Proxy Leader Architecture:
- * - A small, co-located cluster of validators acts as a single stable BFT leader
- * - Eliminates latency from frequent leader rotations in traditional BFT
- * - Targets ~10ms block times (down from ~50ms with Velociraptr)
- * - ~30ms deterministic transaction inclusion/finality
+ * Shows WHY a co-located cluster makes consensus faster:
+ * - Side-by-side comparison: Traditional BFT vs Archon
+ * - Geographic visualization of latency problem
+ * - N×N communication vs cluster + broadcast
  *
- * Builds on Velociraptr (AIP-131) and AptosBFT
+ * Key insight: You can't reduce network latency (physics).
+ * But you CAN reduce the NUMBER of round-trips.
  */
+
+interface TraditionalValidator {
+  id: number;
+  x: number;
+  y: number;
+  city: string;
+  color: string;
+}
+
+interface TraditionalMessage {
+  id: number;
+  fromId: number;
+  toId: number;
+  progress: number;
+  color: string;
+}
 
 interface ClusterNode {
   id: number;
   x: number;
   y: number;
   angle: number;
-  isPrimary: boolean;
-  pulsePhase: number;
 }
 
 interface ExternalValidator {
@@ -29,11 +43,10 @@ interface ExternalValidator {
   x: number;
   y: number;
   angle: number;
-  receiveProgress: number;
   hasBlock: boolean;
 }
 
-interface MessageParticle {
+interface ClusterMessage {
   id: number;
   fromX: number;
   fromY: number;
@@ -41,36 +54,34 @@ interface MessageParticle {
   toY: number;
   progress: number;
   type: "internal" | "external";
-  color: string;
 }
 
 const PHASES = [
   {
-    phase: 1,
-    title: "Cluster Formation",
-    desc: "Co-located validators form a stable leader cluster with ultra-low internal latency"
+    title: "Traditional BFT: The Problem",
+    desc: "Every validator must message every other. Intercontinental latency: 100-300ms per round. 3 rounds = slow blocks."
   },
   {
-    phase: 2,
-    title: "Internal BFT",
-    desc: "Cluster reaches internal consensus in microseconds due to geographic proximity"
+    title: "Archon Cluster Forms",
+    desc: "5 validators co-located in same datacenter. Internal latency: <5ms. They act as ONE 'super-validator'."
   },
   {
-    phase: 3,
-    title: "Block Proposal",
-    desc: "Unified cluster proposes block to full validator set as single logical leader"
+    title: "Fast Internal Consensus",
+    desc: "Cluster reaches BFT agreement in ~5ms (not 100-300ms). No waiting for distant validators."
   },
   {
-    phase: 4,
-    title: "Network Consensus",
-    desc: "External validators vote; ~10ms block time, ~30ms inclusion proof"
+    title: "Single Broadcast to Network",
+    desc: "Cluster proposes as ONE entity. 5× fewer round-trips. Result: ~10ms blocks vs ~130ms traditional."
   },
 ];
 
-const COMPARISON = [
-  { label: "Traditional BFT", time: "100-150ms", hops: "4 hops", issue: "Leader rotation overhead" },
-  { label: "Velociraptr", time: "~50ms", hops: "3 hops", issue: "Still rotates leaders" },
-  { label: "Archon", time: "~10ms", hops: "Stable", issue: "Clustered stability" },
+const CITIES = [
+  { name: "NYC", color: "#3B82F6" },
+  { name: "LON", color: "#10B981" },
+  { name: "TKY", color: "#F59E0B" },
+  { name: "SYD", color: "#EF4444" },
+  { name: "SFO", color: "#A855F7" },
+  { name: "SGP", color: "#06B6D4" },
 ];
 
 export const ArchonConsensus = memo(function ArchonConsensus() {
@@ -81,11 +92,16 @@ export const ArchonConsensus = memo(function ArchonConsensus() {
   const [isMobile, setIsMobile] = useState(false);
   const isVisible = useVisibility(containerRef);
 
+  const traditionalValidatorsRef = useRef<TraditionalValidator[]>([]);
+  const traditionalMessagesRef = useRef<TraditionalMessage[]>([]);
   const clusterNodesRef = useRef<ClusterNode[]>([]);
   const externalValidatorsRef = useRef<ExternalValidator[]>([]);
-  const particlesRef = useRef<MessageParticle[]>([]);
+  const clusterMessagesRef = useRef<ClusterMessage[]>([]);
+
   const phaseTimerRef = useRef(0);
-  const particleIdRef = useRef(0);
+  const messageIdRef = useRef(0);
+  const latencyCounterRef = useRef(0);
+  const archonLatencyRef = useRef(0);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -123,39 +139,50 @@ export const ArchonConsensus = memo(function ArchonConsensus() {
         ctx.setTransform(1, 0, 0, 1, 0, 0);
         ctx.scale(dpr, dpr);
 
-        // Initialize cluster nodes (5 co-located validators)
-        const clusterCenterX = width * 0.35;
-        const clusterCenterY = height * 0.5;
-        const clusterRadius = mobile ? 35 : 50;
+        // Initialize traditional validators (left side)
+        const leftCenterX = width * 0.25;
+        const leftCenterY = height * 0.48;
+        const tradRadius = mobile ? 50 : 75;
+
+        traditionalValidatorsRef.current = CITIES.map((city, i) => {
+          const angle = (i / 6) * Math.PI * 2 - Math.PI / 2;
+          return {
+            id: i,
+            x: leftCenterX + Math.cos(angle) * tradRadius,
+            y: leftCenterY + Math.sin(angle) * tradRadius,
+            city: city.name,
+            color: city.color,
+          };
+        });
+
+        // Initialize Archon cluster (right side center)
+        const rightCenterX = width * 0.75;
+        const rightCenterY = height * 0.48;
+        const clusterRadius = mobile ? 20 : 28;
 
         clusterNodesRef.current = [];
         for (let i = 0; i < 5; i++) {
           const angle = (i / 5) * Math.PI * 2 - Math.PI / 2;
           clusterNodesRef.current.push({
             id: i,
-            x: clusterCenterX + Math.cos(angle) * clusterRadius,
-            y: clusterCenterY + Math.sin(angle) * clusterRadius,
+            x: rightCenterX + Math.cos(angle) * clusterRadius,
+            y: rightCenterY + Math.sin(angle) * clusterRadius,
             angle,
-            isPrimary: i === 0,
-            pulsePhase: i * 0.2,
           });
         }
 
-        // Initialize external validators (ring around the cluster)
-        const externalCenterX = width * 0.35;
-        const externalCenterY = height * 0.5;
-        const externalRadius = mobile ? 90 : 130;
-        const numExternal = mobile ? 12 : 20;
+        // Initialize external validators (ring around cluster)
+        const externalRadius = mobile ? 65 : 90;
+        const numExternal = mobile ? 8 : 12;
 
         externalValidatorsRef.current = [];
         for (let i = 0; i < numExternal; i++) {
           const angle = (i / numExternal) * Math.PI * 2 - Math.PI / 2;
           externalValidatorsRef.current.push({
             id: i,
-            x: externalCenterX + Math.cos(angle) * externalRadius,
-            y: externalCenterY + Math.sin(angle) * externalRadius,
+            x: rightCenterX + Math.cos(angle) * externalRadius,
+            y: rightCenterY + Math.sin(angle) * externalRadius,
             angle,
-            receiveProgress: 0,
             hasBlock: false,
           });
         }
@@ -165,257 +192,327 @@ export const ArchonConsensus = memo(function ArchonConsensus() {
       ctx.fillStyle = "#0a0a0b";
       ctx.fillRect(0, 0, width, height);
 
+      const leftCenterX = width * 0.25;
+      const leftCenterY = height * 0.48;
+      const rightCenterX = width * 0.75;
+      const rightCenterY = height * 0.48;
+      const midX = width * 0.5;
+
       // Phase timer
       phaseTimerRef.current++;
-      if (phaseTimerRef.current > 90) {
+      if (phaseTimerRef.current > 120) {
         phaseTimerRef.current = 0;
         const nextPhase = (currentPhase + 1) % 4;
         setCurrentPhase(nextPhase);
+        latencyCounterRef.current = 0;
+        archonLatencyRef.current = 0;
+        traditionalMessagesRef.current = [];
+        clusterMessagesRef.current = [];
+        externalValidatorsRef.current.forEach(v => v.hasBlock = false);
+      }
 
-        // Reset external validators
-        externalValidatorsRef.current.forEach(v => {
-          v.hasBlock = false;
-          v.receiveProgress = 0;
+      // Update latency counters based on phase
+      if (currentPhase === 0) {
+        latencyCounterRef.current = Math.min(latencyCounterRef.current + 2, 130);
+      } else if (currentPhase >= 2) {
+        archonLatencyRef.current = Math.min(archonLatencyRef.current + 0.5, 10);
+      }
+
+      // Spawn traditional messages in phase 0
+      if (currentPhase === 0 && phaseTimerRef.current % 8 === 0) {
+        const validators = traditionalValidatorsRef.current;
+        const fromIdx = Math.floor(Math.random() * validators.length);
+        let toIdx = Math.floor(Math.random() * validators.length);
+        while (toIdx === fromIdx) toIdx = Math.floor(Math.random() * validators.length);
+
+        traditionalMessagesRef.current.push({
+          id: messageIdRef.current++,
+          fromId: fromIdx,
+          toId: toIdx,
+          progress: 0,
+          color: validators[fromIdx].color,
         });
+      }
 
-        // Spawn particles based on phase
-        if (nextPhase === 1) {
-          // Internal cluster messaging
-          const cluster = clusterNodesRef.current;
-          for (let i = 0; i < cluster.length; i++) {
-            for (let j = i + 1; j < cluster.length; j++) {
-              particlesRef.current.push({
-                id: particleIdRef.current++,
-                fromX: cluster[i].x,
-                fromY: cluster[i].y,
-                toX: cluster[j].x,
-                toY: cluster[j].y,
-                progress: Math.random() * 0.3,
-                type: "internal",
-                color: "#00D9A5",
-              });
-            }
+      // Spawn cluster messages in phase 2
+      if (currentPhase === 2 && phaseTimerRef.current % 4 === 0) {
+        const cluster = clusterNodesRef.current;
+        const fromIdx = Math.floor(Math.random() * cluster.length);
+        let toIdx = Math.floor(Math.random() * cluster.length);
+        while (toIdx === fromIdx) toIdx = Math.floor(Math.random() * cluster.length);
+
+        clusterMessagesRef.current.push({
+          id: messageIdRef.current++,
+          fromX: cluster[fromIdx].x,
+          fromY: cluster[fromIdx].y,
+          toX: cluster[toIdx].x,
+          toY: cluster[toIdx].y,
+          progress: 0,
+          type: "internal",
+        });
+      }
+
+      // Spawn external messages in phase 3
+      if (currentPhase === 3 && phaseTimerRef.current === 10) {
+        externalValidatorsRef.current.forEach((ext, i) => {
+          setTimeout(() => {
+            clusterMessagesRef.current.push({
+              id: messageIdRef.current++,
+              fromX: rightCenterX,
+              fromY: rightCenterY,
+              toX: ext.x,
+              toY: ext.y,
+              progress: 0,
+              type: "external",
+            });
+          }, i * 30);
+        });
+      }
+
+      // Draw divider
+      ctx.strokeStyle = "rgba(255,255,255,0.1)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([4, 4]);
+      ctx.beginPath();
+      ctx.moveTo(midX, 30);
+      ctx.lineTo(midX, height - 60);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Draw "VS" label
+      ctx.fillStyle = "rgba(255,255,255,0.3)";
+      ctx.font = mobile ? "bold 10px system-ui" : "bold 12px system-ui";
+      ctx.textAlign = "center";
+      ctx.fillText("vs", midX, height * 0.48);
+
+      // === LEFT SIDE: Traditional BFT ===
+
+      // Title
+      ctx.fillStyle = currentPhase === 0 ? "#EF4444" : "rgba(255,255,255,0.5)";
+      ctx.font = mobile ? "bold 8px system-ui" : "bold 10px system-ui";
+      ctx.textAlign = "center";
+      ctx.fillText("TRADITIONAL BFT", leftCenterX, mobile ? 16 : 22);
+
+      // Draw traditional validators
+      const tradValidators = traditionalValidatorsRef.current;
+
+      // Draw connection lines (show N×N complexity)
+      if (currentPhase === 0) {
+        ctx.strokeStyle = "rgba(255,255,255,0.05)";
+        ctx.lineWidth = 0.5;
+        for (let i = 0; i < tradValidators.length; i++) {
+          for (let j = i + 1; j < tradValidators.length; j++) {
+            ctx.beginPath();
+            ctx.moveTo(tradValidators[i].x, tradValidators[i].y);
+            ctx.lineTo(tradValidators[j].x, tradValidators[j].y);
+            ctx.stroke();
           }
-        } else if (nextPhase === 2 || nextPhase === 3) {
-          // Cluster to external validators
-          const primary = clusterNodesRef.current[0];
-          externalValidatorsRef.current.forEach((ext, i) => {
-            setTimeout(() => {
-              particlesRef.current.push({
-                id: particleIdRef.current++,
-                fromX: primary.x,
-                fromY: primary.y,
-                toX: ext.x,
-                toY: ext.y,
-                progress: 0,
-                type: "external",
-                color: "#3B82F6",
-              });
-            }, i * 20);
-          });
         }
       }
 
-      const clusterCenterX = width * 0.35;
-      const clusterCenterY = height * 0.5;
-      const clusterRadius = mobile ? 35 : 50;
-      const externalRadius = mobile ? 90 : 130;
+      // Draw validators with city labels
+      tradValidators.forEach((v) => {
+        const size = mobile ? 5 : 7;
+        const isActive = currentPhase === 0;
 
-      // Draw title
-      ctx.fillStyle = "#00D9A5";
-      ctx.font = mobile ? "bold 9px system-ui" : "bold 11px system-ui";
-      ctx.textAlign = "left";
-      ctx.fillText("ARCHON: PRIMARY-PROXY LEADER", mobile ? 8 : 15, mobile ? 14 : 20);
+        ctx.fillStyle = isActive ? v.color : "rgba(255,255,255,0.3)";
+        ctx.beginPath();
+        ctx.arc(v.x, v.y, size, 0, Math.PI * 2);
+        ctx.fill();
 
-      ctx.fillStyle = "rgba(255,255,255,0.5)";
-      ctx.font = mobile ? "7px monospace" : "9px monospace";
-      ctx.textAlign = "right";
-      ctx.fillText("~10ms blocks", width - (mobile ? 8 : 15), mobile ? 14 : 20);
-
-      // Draw external validator ring (background)
-      ctx.strokeStyle = "rgba(255,255,255,0.1)";
-      ctx.lineWidth = 1;
-      ctx.setLineDash([3, 6]);
-      ctx.beginPath();
-      ctx.arc(clusterCenterX, clusterCenterY, externalRadius, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      // Draw cluster boundary (highlight during phase 0-1)
-      const clusterActive = currentPhase <= 1;
-      ctx.strokeStyle = clusterActive ? "#00D9A5" + "60" : "rgba(255,255,255,0.1)";
-      ctx.lineWidth = clusterActive ? 2 : 1;
-      ctx.setLineDash(clusterActive ? [] : [2, 4]);
-      ctx.beginPath();
-      ctx.arc(clusterCenterX, clusterCenterY, clusterRadius + 15, 0, Math.PI * 2);
-      ctx.stroke();
-      ctx.setLineDash([]);
-
-      // Draw "CO-LOCATED" label for cluster
-      if (clusterActive) {
-        ctx.fillStyle = "#00D9A5" + "80";
-        ctx.font = mobile ? "bold 6px system-ui" : "bold 8px system-ui";
+        // City label
+        ctx.fillStyle = isActive ? v.color : "rgba(255,255,255,0.3)";
+        ctx.font = mobile ? "5px monospace" : "7px monospace";
         ctx.textAlign = "center";
-        ctx.fillText("CO-LOCATED", clusterCenterX, clusterCenterY - clusterRadius - (mobile ? 22 : 28));
-        ctx.fillText("CLUSTER", clusterCenterX, clusterCenterY - clusterRadius - (mobile ? 14 : 18));
+        ctx.fillText(v.city, v.x, v.y + size + (mobile ? 8 : 12));
+      });
+
+      // Draw and update traditional messages
+      traditionalMessagesRef.current = traditionalMessagesRef.current.filter((msg) => {
+        msg.progress += 0.015; // Slow!
+
+        const from = tradValidators[msg.fromId];
+        const to = tradValidators[msg.toId];
+        const x = from.x + (to.x - from.x) * msg.progress;
+        const y = from.y + (to.y - from.y) * msg.progress;
+        const size = mobile ? 2 : 3;
+
+        ctx.fillStyle = msg.color + "80";
+        ctx.beginPath();
+        ctx.arc(x, y, size, 0, Math.PI * 2);
+        ctx.fill();
+
+        return msg.progress < 1;
+      });
+
+      // Traditional latency bar
+      const tradBarY = height - (mobile ? 45 : 55);
+      const barWidth = width * 0.2;
+      const barHeight = mobile ? 8 : 12;
+
+      ctx.fillStyle = "rgba(255,255,255,0.1)";
+      ctx.fillRect(leftCenterX - barWidth / 2, tradBarY, barWidth, barHeight);
+
+      const tradFill = (latencyCounterRef.current / 130) * barWidth;
+      ctx.fillStyle = "#EF4444";
+      ctx.fillRect(leftCenterX - barWidth / 2, tradBarY, tradFill, barHeight);
+
+      ctx.fillStyle = "#EF4444";
+      ctx.font = mobile ? "bold 10px monospace" : "bold 12px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(`${Math.floor(latencyCounterRef.current)}ms`, leftCenterX, tradBarY - 5);
+
+      // "Waiting for..." label
+      if (currentPhase === 0 && latencyCounterRef.current < 130) {
+        ctx.fillStyle = "rgba(255,255,255,0.4)";
+        ctx.font = mobile ? "6px system-ui" : "8px system-ui";
+        ctx.fillText("Waiting for all validators...", leftCenterX, tradBarY + barHeight + (mobile ? 10 : 14));
       }
 
-      // Draw internal cluster connections
+      // === RIGHT SIDE: Archon ===
+
+      // Title
+      ctx.fillStyle = currentPhase >= 1 ? "#00D9A5" : "rgba(255,255,255,0.5)";
+      ctx.font = mobile ? "bold 8px system-ui" : "bold 10px system-ui";
+      ctx.textAlign = "center";
+      ctx.fillText("ARCHON", rightCenterX, mobile ? 16 : 22);
+
+      // Draw cluster boundary
+      const clusterRadius = mobile ? 32 : 45;
+      const clusterActive = currentPhase >= 1;
+
+      ctx.strokeStyle = clusterActive ? "#00D9A5" + "60" : "rgba(255,255,255,0.1)";
+      ctx.lineWidth = clusterActive ? 2 : 1;
+      ctx.beginPath();
+      ctx.arc(rightCenterX, rightCenterY, clusterRadius, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // "Same Datacenter" label
+      if (clusterActive) {
+        ctx.fillStyle = "#00D9A5" + "80";
+        ctx.font = mobile ? "bold 5px system-ui" : "bold 7px system-ui";
+        ctx.fillText("SAME DATACENTER", rightCenterX, rightCenterY - clusterRadius - (mobile ? 8 : 12));
+      }
+
+      // Draw cluster internal connections
       const cluster = clusterNodesRef.current;
-      ctx.strokeStyle = currentPhase === 1 ? "#00D9A5" + "40" : "rgba(255,255,255,0.05)";
-      ctx.lineWidth = 1;
-      for (let i = 0; i < cluster.length; i++) {
-        for (let j = i + 1; j < cluster.length; j++) {
-          ctx.beginPath();
-          ctx.moveTo(cluster[i].x, cluster[i].y);
-          ctx.lineTo(cluster[j].x, cluster[j].y);
-          ctx.stroke();
+      if (currentPhase === 2) {
+        ctx.strokeStyle = "#00D9A5" + "30";
+        ctx.lineWidth = 1;
+        for (let i = 0; i < cluster.length; i++) {
+          for (let j = i + 1; j < cluster.length; j++) {
+            ctx.beginPath();
+            ctx.moveTo(cluster[i].x, cluster[i].y);
+            ctx.lineTo(cluster[j].x, cluster[j].y);
+            ctx.stroke();
+          }
         }
       }
 
       // Draw cluster nodes
       cluster.forEach((node, i) => {
-        node.pulsePhase += 0.05;
-        const pulse = currentPhase <= 1 ? Math.sin(node.pulsePhase) * 0.3 + 1 : 1;
-        const size = (mobile ? 6 : 8) * pulse;
+        const size = mobile ? 5 : 6;
+        const isActive = currentPhase >= 1;
 
-        // Glow
-        const gradient = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, size * 3);
-        gradient.addColorStop(0, (node.isPrimary ? "#00D9A5" : "#3B82F6") + "60");
-        gradient.addColorStop(1, "transparent");
-        ctx.fillStyle = gradient;
-        ctx.beginPath();
-        ctx.arc(node.x, node.y, size * 3, 0, Math.PI * 2);
-        ctx.fill();
+        // Glow for active
+        if (isActive && currentPhase === 2) {
+          const glow = ctx.createRadialGradient(node.x, node.y, 0, node.x, node.y, size * 2);
+          glow.addColorStop(0, "#00D9A5" + "40");
+          glow.addColorStop(1, "transparent");
+          ctx.fillStyle = glow;
+          ctx.beginPath();
+          ctx.arc(node.x, node.y, size * 2, 0, Math.PI * 2);
+          ctx.fill();
+        }
 
-        // Core
-        ctx.fillStyle = node.isPrimary ? "#00D9A5" : "#3B82F6";
+        ctx.fillStyle = isActive ? "#00D9A5" : "rgba(255,255,255,0.3)";
         ctx.beginPath();
         ctx.arc(node.x, node.y, size, 0, Math.PI * 2);
         ctx.fill();
-
-        // Primary label
-        if (node.isPrimary) {
-          ctx.fillStyle = "#00D9A5";
-          ctx.font = mobile ? "bold 5px monospace" : "bold 6px monospace";
-          ctx.textAlign = "center";
-          ctx.fillText("P", node.x, node.y + (mobile ? 2 : 2.5));
-        }
       });
+
+      // Draw external validator ring
+      const externalRadius = mobile ? 65 : 90;
+      ctx.strokeStyle = "rgba(255,255,255,0.08)";
+      ctx.lineWidth = 1;
+      ctx.setLineDash([2, 4]);
+      ctx.beginPath();
+      ctx.arc(rightCenterX, rightCenterY, externalRadius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // "Global Network" label
+      if (currentPhase >= 3) {
+        ctx.fillStyle = "rgba(255,255,255,0.4)";
+        ctx.font = mobile ? "5px system-ui" : "6px system-ui";
+        ctx.fillText("GLOBAL NETWORK", rightCenterX, rightCenterY + externalRadius + (mobile ? 10 : 14));
+      }
 
       // Draw external validators
       externalValidatorsRef.current.forEach((ext) => {
-        const isReceiving = currentPhase >= 2;
-        if (isReceiving && !ext.hasBlock) {
-          ext.receiveProgress += 0.02;
-          if (ext.receiveProgress > 1) ext.hasBlock = true;
-        }
+        const size = mobile ? 3 : 4;
+        const isActive = currentPhase >= 3;
 
-        const size = mobile ? 4 : 5;
-        const color = ext.hasBlock ? "#00D9A5" : (isReceiving ? "#F59E0B" : "rgba(255,255,255,0.3)");
-
-        ctx.fillStyle = color;
+        ctx.fillStyle = ext.hasBlock ? "#00D9A5" : (isActive ? "#3B82F6" : "rgba(255,255,255,0.2)");
         ctx.beginPath();
         ctx.arc(ext.x, ext.y, size, 0, Math.PI * 2);
         ctx.fill();
       });
 
-      // Draw and update particles
-      particlesRef.current = particlesRef.current.filter((p) => {
-        p.progress += p.type === "internal" ? 0.08 : 0.04;
+      // Draw and update cluster messages
+      clusterMessagesRef.current = clusterMessagesRef.current.filter((msg) => {
+        const speed = msg.type === "internal" ? 0.15 : 0.04; // Internal is FAST
+        msg.progress += speed;
 
-        const x = p.fromX + (p.toX - p.fromX) * p.progress;
-        const y = p.fromY + (p.toY - p.fromY) * p.progress;
+        const x = msg.fromX + (msg.toX - msg.fromX) * msg.progress;
+        const y = msg.fromY + (msg.toY - msg.fromY) * msg.progress;
         const size = mobile ? 2 : 3;
 
-        // Trail
-        const trailGradient = ctx.createRadialGradient(x, y, 0, x, y, size * 2);
-        trailGradient.addColorStop(0, p.color + "80");
-        trailGradient.addColorStop(1, "transparent");
-        ctx.fillStyle = trailGradient;
-        ctx.beginPath();
-        ctx.arc(x, y, size * 2, 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.fillStyle = p.color;
+        ctx.fillStyle = msg.type === "internal" ? "#00D9A5" : "#3B82F6";
         ctx.beginPath();
         ctx.arc(x, y, size, 0, Math.PI * 2);
         ctx.fill();
 
-        return p.progress < 1;
-      });
-
-      // Draw comparison section on right side
-      const compX = width * (mobile ? 0.68 : 0.72);
-      const compY = mobile ? 35 : 50;
-      const compWidth = mobile ? width * 0.30 : width * 0.25;
-      const rowHeight = mobile ? 28 : 38;
-
-      ctx.fillStyle = "rgba(255,255,255,0.03)";
-      ctx.beginPath();
-      ctx.roundRect(compX - 8, compY - 5, compWidth + 16, rowHeight * 3 + 15, 6);
-      ctx.fill();
-
-      ctx.fillStyle = "rgba(255,255,255,0.6)";
-      ctx.font = mobile ? "bold 7px system-ui" : "bold 9px system-ui";
-      ctx.textAlign = "left";
-      ctx.fillText("LATENCY EVOLUTION", compX, compY + 6);
-
-      COMPARISON.forEach((item, i) => {
-        const y = compY + 18 + i * rowHeight;
-        const isArchon = i === 2;
-        const isActive = (i === 0 && currentPhase === 0) ||
-                        (i === 1 && currentPhase === 1) ||
-                        (i === 2 && currentPhase >= 2);
-
-        // Background
-        if (isActive) {
-          ctx.fillStyle = isArchon ? "rgba(0, 217, 165, 0.15)" : "rgba(255,255,255,0.05)";
-          ctx.beginPath();
-          ctx.roundRect(compX - 4, y - 8, compWidth + 8, rowHeight - 4, 3);
-          ctx.fill();
+        // Mark external validator as received
+        if (msg.type === "external" && msg.progress >= 0.95) {
+          externalValidatorsRef.current.forEach(ext => {
+            if (Math.abs(ext.x - msg.toX) < 5 && Math.abs(ext.y - msg.toY) < 5) {
+              ext.hasBlock = true;
+            }
+          });
         }
 
-        // Label
-        ctx.fillStyle = isArchon ? "#00D9A5" : "rgba(255,255,255,0.7)";
-        ctx.font = mobile ? "bold 6px system-ui" : "bold 8px system-ui";
-        ctx.fillText(item.label, compX, y + 2);
-
-        // Time
-        ctx.fillStyle = isArchon ? "#00D9A5" : "#3B82F6";
-        ctx.font = mobile ? "bold 8px monospace" : "bold 10px monospace";
-        ctx.textAlign = "right";
-        ctx.fillText(item.time, compX + compWidth, y + 2);
-        ctx.textAlign = "left";
-
-        // Subtext
-        ctx.fillStyle = "rgba(255,255,255,0.4)";
-        ctx.font = mobile ? "5px system-ui" : "6px system-ui";
-        ctx.fillText(item.issue, compX, y + (mobile ? 10 : 12));
+        return msg.progress < 1;
       });
 
-      // Draw bottom stats bar
-      const statsY = height - (mobile ? 22 : 30);
-      const stats = [
-        { label: "Block Time", value: "~10ms", color: "#00D9A5" },
-        { label: "Finality", value: "~30ms", color: "#3B82F6" },
-        { label: "Cluster Size", value: "5 nodes", color: "#F59E0B" },
-        { label: "Validators", value: "140+", color: "#A855F7" },
-      ];
+      // Archon latency bar
+      ctx.fillStyle = "rgba(255,255,255,0.1)";
+      ctx.fillRect(rightCenterX - barWidth / 2, tradBarY, barWidth, barHeight);
 
-      const statWidth = (width - 20) / stats.length;
-      stats.forEach((stat, i) => {
-        const x = 10 + i * statWidth;
+      const archonFill = (archonLatencyRef.current / 10) * barWidth;
+      ctx.fillStyle = "#00D9A5";
+      ctx.fillRect(rightCenterX - barWidth / 2, tradBarY, archonFill, barHeight);
 
-        ctx.fillStyle = stat.color;
-        ctx.font = mobile ? "bold 9px monospace" : "bold 11px monospace";
+      ctx.fillStyle = "#00D9A5";
+      ctx.font = mobile ? "bold 10px monospace" : "bold 12px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText(`${Math.floor(archonLatencyRef.current)}ms`, rightCenterX, tradBarY - 5);
+
+      // "Cluster ready" label
+      if (currentPhase >= 2) {
+        ctx.fillStyle = "rgba(255,255,255,0.4)";
+        ctx.font = mobile ? "6px system-ui" : "8px system-ui";
+        ctx.fillText(currentPhase === 2 ? "Internal consensus: ~5ms" : "Cluster broadcasts as ONE", rightCenterX, tradBarY + barHeight + (mobile ? 10 : 14));
+      }
+
+      // Bottom comparison
+      if (currentPhase === 3 && phaseTimerRef.current > 60) {
+        const compY = height - (mobile ? 18 : 22);
+        ctx.fillStyle = "#00D9A5";
+        ctx.font = mobile ? "bold 7px system-ui" : "bold 9px system-ui";
         ctx.textAlign = "center";
-        ctx.fillText(stat.value, x + statWidth / 2, statsY);
-
-        ctx.fillStyle = "rgba(255,255,255,0.4)";
-        ctx.font = mobile ? "5px system-ui" : "7px system-ui";
-        ctx.fillText(stat.label, x + statWidth / 2, statsY + (mobile ? 10 : 12));
-      });
+        ctx.fillText("13× FASTER: Fewer round-trips, not faster light", width / 2, compY);
+      }
 
       animationRef.current = requestAnimationFrame(render);
     };
@@ -433,14 +530,14 @@ export const ArchonConsensus = memo(function ArchonConsensus() {
               className="px-1.5 py-0.5 rounded text-[8px] sm:text-[10px] font-bold"
               style={{ backgroundColor: "#F59E0B", color: "#000" }}
             >
-              COMING SOON
+              COMING 2026
             </span>
             <h3 className="text-xs sm:text-sm font-bold" style={{ color: "var(--chrome-200)" }}>
-              Archon: Next-Gen Consensus
+              Archon: The Innovation
             </h3>
           </div>
           <p className="text-[9px] sm:text-xs" style={{ color: "var(--chrome-600)" }}>
-            {isMobile ? "10ms blocks via stable leader cluster" : "Primary-proxy leader architecture for ~10ms block times"}
+            {isMobile ? "Why co-located clusters = 13× faster" : "Why co-located validator clusters enable 13× faster consensus"}
           </p>
         </div>
       </div>
@@ -448,7 +545,7 @@ export const ArchonConsensus = memo(function ArchonConsensus() {
       <canvas
         ref={canvasRef}
         className="w-full rounded"
-        style={{ height: isMobile ? "220px" : "300px" }}
+        style={{ height: isMobile ? "240px" : "320px" }}
       />
 
       {/* Phase explanation */}
@@ -456,11 +553,11 @@ export const ArchonConsensus = memo(function ArchonConsensus() {
         <div className="flex items-center gap-2 mb-1">
           <span
             className="px-1.5 py-0.5 rounded text-[8px] sm:text-xs font-bold flex-shrink-0"
-            style={{ backgroundColor: "#00D9A5", color: "#000" }}
+            style={{ backgroundColor: currentPhase === 0 ? "#EF4444" : "#00D9A5", color: currentPhase === 0 ? "#fff" : "#000" }}
           >
             {currentPhase + 1}/4
           </span>
-          <span className="text-[10px] sm:text-sm font-bold truncate" style={{ color: "#00D9A5" }}>
+          <span className="text-[10px] sm:text-sm font-bold truncate" style={{ color: currentPhase === 0 ? "#EF4444" : "#00D9A5" }}>
             {PHASES[currentPhase].title}
           </span>
         </div>
@@ -469,41 +566,29 @@ export const ArchonConsensus = memo(function ArchonConsensus() {
         </p>
       </div>
 
-      {/* Key innovation explanation */}
-      <div className="mt-2 grid grid-cols-2 gap-2">
-        <div className="p-2 rounded bg-white/5">
-          <div className="text-[10px] sm:text-xs font-bold mb-1" style={{ color: "#00D9A5" }}>
-            Why Faster?
-          </div>
-          <p className="text-[8px] sm:text-[10px]" style={{ color: "var(--chrome-500)" }}>
-            {isMobile
-              ? "Co-located cluster eliminates rotation delays"
-              : "Small co-located cluster acts as stable BFT leader, eliminating rotation overhead"
-            }
-          </p>
-        </div>
-        <div className="p-2 rounded bg-white/5">
-          <div className="text-[10px] sm:text-xs font-bold mb-1" style={{ color: "#3B82F6" }}>
-            Still Decentralized
-          </div>
-          <p className="text-[8px] sm:text-[10px]" style={{ color: "var(--chrome-500)" }}>
-            {isMobile
-              ? "Full BFT security, no trust assumptions"
-              : "Cluster rotates internally; full 140+ validator network maintains BFT security"
-            }
-          </p>
-        </div>
-      </div>
-
-      {/* Technical context */}
-      <div className="mt-2 p-1.5 rounded bg-white/5">
-        <p className="text-[8px] sm:text-xs" style={{ color: "var(--chrome-500)" }}>
-          <span className="font-bold" style={{ color: "#F59E0B" }}>Builds on:</span>
+      {/* Key insight */}
+      <div className="mt-2 p-2 rounded bg-gradient-to-r from-amber-500/10 to-transparent border border-amber-500/20">
+        <p className="text-[9px] sm:text-xs" style={{ color: "var(--chrome-400)" }}>
+          <span className="font-bold" style={{ color: "#F59E0B" }}>Key Insight:</span>
           {isMobile
-            ? " Velociraptr (50ms) → Archon (10ms). Integrates with Block-STM v2 & Encrypted Mempool."
-            : " Velociraptr (AIP-131) achieved ~50ms blocks. Archon targets ~10ms via primary-proxy leader model. Integrates with Block-STM v2, Encrypted Mempool, and Event-Driven Transactions for CEX-level responsiveness."
+            ? " You can't speed up light. But you CAN reduce round-trips by delegating internal consensus to a co-located cluster."
+            : " You can't reduce network latency (physics-limited). But you CAN reduce the NUMBER of round-trips. The cluster absorbs N×N validator communication into fast internal consensus, then broadcasts as ONE entity."
           }
         </p>
+      </div>
+
+      {/* Comparison stats */}
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        <div className="p-2 rounded bg-red-500/10 border border-red-500/20 text-center">
+          <div className="text-xs sm:text-sm font-bold" style={{ color: "#EF4444" }}>Traditional</div>
+          <div className="text-lg sm:text-xl font-bold" style={{ color: "#EF4444" }}>~130ms</div>
+          <div className="text-[8px] sm:text-[10px]" style={{ color: "var(--chrome-500)" }}>N×N messages, 3 rounds</div>
+        </div>
+        <div className="p-2 rounded bg-emerald-500/10 border border-emerald-500/20 text-center">
+          <div className="text-xs sm:text-sm font-bold" style={{ color: "#00D9A5" }}>Archon</div>
+          <div className="text-lg sm:text-xl font-bold" style={{ color: "#00D9A5" }}>~10ms</div>
+          <div className="text-[8px] sm:text-[10px]" style={{ color: "var(--chrome-500)" }}>Cluster + 1 broadcast</div>
+        </div>
       </div>
     </div>
   );
