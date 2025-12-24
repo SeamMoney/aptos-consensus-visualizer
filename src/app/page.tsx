@@ -26,7 +26,7 @@ export default function Home() {
   const { stats, connected } = useAptosStream();
 
   return (
-    <main className="min-h-screen min-h-[100dvh] px-3 py-4 sm:px-6 sm:py-8">
+    <main className="min-h-screen min-h-[100dvh] px-1.5 py-3 sm:px-6 sm:py-8">
       <div className="max-w-4xl mx-auto">
         {/* Header - Compact and clean */}
         <header className="flex items-center justify-between mb-4 sm:mb-6">
@@ -45,7 +45,7 @@ export default function Home() {
         </header>
 
         {/* Introduction - What you'll learn */}
-        <div className="mb-6 p-4 rounded-lg bg-gradient-to-r from-emerald-500/10 to-transparent border border-emerald-500/20">
+        <div className="mb-4 sm:mb-6 p-2 sm:p-4 rounded-lg bg-gradient-to-r from-emerald-500/10 to-transparent border border-emerald-500/20">
           <h2 className="text-sm font-bold mb-2" style={{ color: "#00D9A5" }}>
             How Aptos Works: A Visual Guide
           </h2>

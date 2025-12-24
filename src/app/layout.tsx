@@ -5,8 +5,34 @@ import "./globals.css";
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "Aptos Consensus Visualizer",
-  description: "Visualize the evolution of Aptos consensus: Quorum Store → Velociraptr → Raptr",
+  title: "Aptos Velociraptr | 160K+ TPS Visualized",
+  description: "Learn how Aptos processes 160,000+ transactions per second. Interactive visualizations of Block-STM, Raptr consensus, Quorum Store, and the Move VM execution pipeline.",
+  keywords: ["Aptos", "blockchain", "consensus", "TPS", "Block-STM", "Raptr", "Velociraptr", "Move VM", "visualization"],
+  authors: [{ name: "SeamMoney" }],
+  creator: "SeamMoney",
+  publisher: "SeamMoney",
+  metadataBase: new URL("https://velociraptr.com"),
+  openGraph: {
+    type: "website",
+    locale: "en_US",
+    siteName: "Aptos Velociraptr",
+    title: "Aptos Velociraptr | 160K+ TPS Visualized",
+    description: "Learn how Aptos processes 160,000+ transactions per second with interactive visualizations.",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: "Aptos Velociraptr | 160K+ TPS Visualized",
+    description: "Learn how Aptos processes 160,000+ transactions per second with interactive visualizations.",
+    creator: "@AptosNetwork",
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
+  icons: {
+    icon: "/icon.svg",
+    apple: "/icon.svg",
+  },
 };
 
 export default function RootLayout({
