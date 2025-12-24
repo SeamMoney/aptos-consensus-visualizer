@@ -61,15 +61,15 @@ export const ConsensusEvolution = memo(function ConsensusEvolution() {
     const initDAG = (width: number, height: number, mobile: boolean) => {
       const blocks: DAGBlock[] = [];
       const halfW = mobile ? width : width / 2;
-      const startX = mobile ? 20 : 20;
-      const endX = halfW - 20;
-      const startY = mobile ? 50 : 60;
-      const endY = mobile ? height * 0.45 - 20 : height - 80;
+      const startX = mobile ? 15 : 20;
+      const endX = halfW - (mobile ? 15 : 20);
+      const startY = mobile ? 40 : 60;
+      const endY = mobile ? height * 0.48 - 15 : height - 80;
 
-      const cols = mobile ? 4 : 5;
+      const cols = mobile ? 5 : 5;
       const rows = mobile ? 3 : 4;
-      const colWidth = (endX - startX) / cols;
-      const rowHeight = (endY - startY) / rows;
+      const colWidth = (endX - startX) / (cols - 1);
+      const rowHeight = (endY - startY) / (rows - 1);
 
       let id = 0;
       for (let row = 0; row < rows; row++) {
@@ -82,18 +82,18 @@ export const ConsensusEvolution = memo(function ConsensusEvolution() {
             const prevRowStart = (row - 1) * cols;
             // Each block connects to 2-3 parents
             if (col > 0) parents.push(prevRowStart + col - 1);
-            parents.push(prevRowStart + col);
+            parents.push(prevRowStart + Math.min(col, cols - 1));
             if (col < cols - 1) parents.push(prevRowStart + col + 1);
           }
 
           blocks.push({
             id,
-            x: startX + col * colWidth + colWidth / 2 + (Math.random() - 0.5) * 10,
-            y: startY + row * rowHeight + rowHeight / 2,
+            x: startX + col * colWidth + (Math.random() - 0.5) * 8,
+            y: startY + row * rowHeight,
             validator,
             parents,
             depth: row,
-            committed: row < rows - 2,
+            committed: row < rows - 1,
             opacity: 0,
           });
           id++;
@@ -217,7 +217,7 @@ export const ConsensusEvolution = memo(function ConsensusEvolution() {
       <canvas
         ref={canvasRef}
         className="w-full rounded"
-        style={{ height: isMobile ? "380px" : "300px" }}
+        style={{ height: isMobile ? "280px" : "300px" }}
       />
 
       {/* Architecture summary */}
@@ -273,30 +273,30 @@ function drawMysticetiSection(
   colors: string[],
   mobile: boolean
 ) {
-  const titleY = offsetY + (mobile ? 18 : 25);
+  const titleY = offsetY + (mobile ? 14 : 25);
 
   // Title
   ctx.fillStyle = "#6FBCF0";
-  ctx.font = mobile ? "bold 9px system-ui" : "bold 11px system-ui";
+  ctx.font = mobile ? "bold 8px system-ui" : "bold 11px system-ui";
   ctx.textAlign = "left";
   ctx.fillText("MYSTICETI v2", offsetX + padding, titleY);
 
   // Subtitle
-  ctx.fillStyle = "rgba(255,255,255,0.5)";
-  ctx.font = mobile ? "6px system-ui" : "8px system-ui";
+  ctx.fillStyle = "rgba(255,255,255,0.4)";
+  ctx.font = mobile ? "5px system-ui" : "8px system-ui";
   ctx.textAlign = "right";
-  ctx.fillText("DAG Parallel Consensus", offsetX + width - padding, titleY);
+  ctx.fillText("DAG Parallel", offsetX + width - padding, titleY);
 
   // Draw DAG edges first
-  ctx.strokeStyle = "rgba(111, 188, 240, 0.2)";
-  ctx.lineWidth = 1;
+  ctx.strokeStyle = "rgba(111, 188, 240, 0.3)";
+  ctx.lineWidth = mobile ? 1 : 1.5;
   blocks.forEach(block => {
     if (block.opacity < 0.1) return;
     block.parents.forEach(parentId => {
       const parent = blocks[parentId];
       if (!parent || parent.opacity < 0.1) return;
 
-      ctx.globalAlpha = Math.min(block.opacity, parent.opacity) * 0.5;
+      ctx.globalAlpha = Math.min(block.opacity, parent.opacity) * 0.6;
       ctx.beginPath();
       ctx.moveTo(offsetX + parent.x, offsetY + parent.y);
       ctx.lineTo(offsetX + block.x, offsetY + block.y);
@@ -310,17 +310,17 @@ function drawMysticetiSection(
     if (block.opacity < 0.1) return;
 
     const color = colors[block.validator];
-    const size = mobile ? 6 : 8;
+    const size = mobile ? 7 : 8;
 
     ctx.globalAlpha = block.opacity;
 
     // Committed glow
     if (block.committed) {
       ctx.shadowColor = color;
-      ctx.shadowBlur = 8;
+      ctx.shadowBlur = 10;
     }
 
-    ctx.fillStyle = block.committed ? color : color + "80";
+    ctx.fillStyle = block.committed ? color : color + "60";
     ctx.beginPath();
     ctx.arc(offsetX + block.x, offsetY + block.y, size, 0, Math.PI * 2);
     ctx.fill();
@@ -329,28 +329,21 @@ function drawMysticetiSection(
   });
   ctx.globalAlpha = 1;
 
-  // Validator legend
-  const legendY = offsetY + height - (mobile ? 25 : 35);
-  ctx.font = mobile ? "6px system-ui" : "7px system-ui";
-  ctx.textAlign = "center";
-
-  for (let i = 0; i < 4; i++) {
-    const x = offsetX + padding + 20 + i * (mobile ? 35 : 45);
-    ctx.fillStyle = colors[i];
-    ctx.beginPath();
-    ctx.arc(x, legendY, mobile ? 3 : 4, 0, Math.PI * 2);
-    ctx.fill();
-
-    ctx.fillStyle = "rgba(255,255,255,0.4)";
-    ctx.fillText(`V${i + 1}`, x, legendY + (mobile ? 10 : 12));
+  // "Parallel" annotation at bottom (mobile only)
+  if (mobile) {
+    const annotY = offsetY + height - 8;
+    ctx.fillStyle = "rgba(111, 188, 240, 0.5)";
+    ctx.font = "bold 6px system-ui";
+    ctx.textAlign = "center";
+    ctx.fillText("← Validators propose in parallel →", offsetX + width / 2, annotY);
+  } else {
+    // Desktop annotation
+    const annotY = offsetY + height - 15;
+    ctx.fillStyle = "rgba(111, 188, 240, 0.5)";
+    ctx.font = "bold 7px system-ui";
+    ctx.textAlign = "center";
+    ctx.fillText("← Each validator proposes blocks in parallel →", offsetX + width / 2, annotY);
   }
-
-  // "Parallel" annotation
-  const annotY = offsetY + (mobile ? 35 : 45);
-  ctx.fillStyle = "rgba(111, 188, 240, 0.6)";
-  ctx.font = mobile ? "bold 7px system-ui" : "bold 8px system-ui";
-  ctx.textAlign = "center";
-  ctx.fillText("← Parallel proposals →", offsetX + width / 2, annotY);
 }
 
 // Draw Archon cluster section
@@ -364,24 +357,24 @@ function drawArchonSection(
   frame: number,
   mobile: boolean
 ) {
-  const titleY = offsetY + (mobile ? 18 : 25);
+  const titleY = offsetY + (mobile ? 14 : 25);
 
   // Title
   ctx.fillStyle = "#00D9A5";
-  ctx.font = mobile ? "bold 9px system-ui" : "bold 11px system-ui";
+  ctx.font = mobile ? "bold 8px system-ui" : "bold 11px system-ui";
   ctx.textAlign = "left";
   ctx.fillText("ARCHON", offsetX + padding, titleY);
 
   // Subtitle
-  ctx.fillStyle = "rgba(255,255,255,0.5)";
-  ctx.font = mobile ? "6px system-ui" : "8px system-ui";
+  ctx.fillStyle = "rgba(255,255,255,0.4)";
+  ctx.font = mobile ? "5px system-ui" : "8px system-ui";
   ctx.textAlign = "right";
-  ctx.fillText("Co-located Cluster", offsetX + width - padding, titleY);
+  ctx.fillText("Co-located", offsetX + width - padding, titleY);
 
   const centerX = offsetX + width / 2;
-  const centerY = offsetY + height / 2 + (mobile ? 5 : 10);
-  const clusterRadius = mobile ? 25 : 35;
-  const externalRadius = mobile ? 55 : 80;
+  const centerY = offsetY + height / 2 - (mobile ? 5 : 0);
+  const clusterRadius = mobile ? 20 : 35;
+  const externalRadius = mobile ? 45 : 80;
 
   // Animation phase
   const phase = (frame % 90) / 90;
@@ -404,23 +397,23 @@ function drawArchonSection(
     const y = centerY + Math.sin(angle) * externalRadius;
     externalNodes.push({ x, y });
 
-    ctx.fillStyle = "#00D9A5" + "60";
+    ctx.fillStyle = "#00D9A5" + "50";
     ctx.beginPath();
-    ctx.arc(x, y, mobile ? 5 : 7, 0, Math.PI * 2);
+    ctx.arc(x, y, mobile ? 4 : 7, 0, Math.PI * 2);
     ctx.fill();
   }
 
   // Cluster background
   ctx.fillStyle = "rgba(0, 217, 165, 0.1)";
   ctx.beginPath();
-  ctx.arc(centerX, centerY, clusterRadius + 10, 0, Math.PI * 2);
+  ctx.arc(centerX, centerY, clusterRadius + 8, 0, Math.PI * 2);
   ctx.fill();
 
-  // "SAME DC" label
-  ctx.fillStyle = "rgba(0, 217, 165, 0.4)";
-  ctx.font = mobile ? "bold 6px system-ui" : "bold 7px system-ui";
+  // "SAME DC" label - positioned inside the cluster background
+  ctx.fillStyle = "rgba(0, 217, 165, 0.6)";
+  ctx.font = mobile ? "bold 5px system-ui" : "bold 7px system-ui";
   ctx.textAlign = "center";
-  ctx.fillText("SAME DC", centerX, centerY - clusterRadius - (mobile ? 15 : 20));
+  ctx.fillText("SAME DC", centerX, centerY - clusterRadius - (mobile ? 12 : 20));
 
   // Cluster nodes
   const clusterCount = 5;
@@ -435,7 +428,7 @@ function drawArchonSection(
   // Internal consensus messages (fast)
   if (internalPhase > 0 && internalPhase < 1) {
     ctx.strokeStyle = "#00D9A5";
-    ctx.lineWidth = 2;
+    ctx.lineWidth = mobile ? 1.5 : 2;
     ctx.globalAlpha = 0.6;
 
     for (let i = 0; i < clusterCount; i++) {
@@ -458,12 +451,12 @@ function drawArchonSection(
   }
 
   // Draw cluster nodes (on top of messages)
-  clusterNodes.forEach((node, i) => {
+  clusterNodes.forEach((node) => {
     ctx.shadowColor = "#00D9A5";
     ctx.shadowBlur = internalPhase >= 1 ? 12 : 6;
     ctx.fillStyle = "#00D9A5";
     ctx.beginPath();
-    ctx.arc(node.x, node.y, mobile ? 6 : 8, 0, Math.PI * 2);
+    ctx.arc(node.x, node.y, mobile ? 5 : 8, 0, Math.PI * 2);
     ctx.fill();
     ctx.shadowBlur = 0;
   });
@@ -492,9 +485,9 @@ function drawArchonSection(
     ctx.lineWidth = 1;
   }
 
-  // Phase indicator
-  const phaseY = offsetY + height - (mobile ? 25 : 30);
-  ctx.font = mobile ? "bold 7px monospace" : "bold 9px monospace";
+  // Phase indicator at bottom
+  const phaseY = offsetY + height - (mobile ? 8 : 25);
+  ctx.font = mobile ? "bold 6px monospace" : "bold 9px monospace";
   ctx.textAlign = "center";
 
   if (phase < 0.3) {
@@ -504,9 +497,4 @@ function drawArchonSection(
     ctx.fillStyle = "rgba(0, 217, 165, 0.6)";
     ctx.fillText("Broadcast: 1 round", centerX, phaseY);
   }
-
-  // Timing annotation
-  ctx.fillStyle = "rgba(255,255,255,0.3)";
-  ctx.font = mobile ? "5px system-ui" : "6px system-ui";
-  ctx.fillText("(vs N×N in traditional BFT)", centerX, phaseY + (mobile ? 10 : 12));
 }
