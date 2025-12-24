@@ -1,13 +1,41 @@
 "use client";
 
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, useState } from "react";
 
-// All chains with theoretical max TPS for fair comparison
+// All chains with theoretical max TPS and technical explanation
 const CHAINS = [
-  { name: "Aptos", color: "#00D9A5", theoreticalTps: 160000 }, // Block-STM parallel execution
-  { name: "Sui", color: "#6FBCF0", theoreticalTps: 120000 },
-  { name: "megaETH", color: "#FF6B6B", theoreticalTps: 100000 },
-  { name: "Solana", color: "#14F195", theoreticalTps: 65000 },
+  {
+    name: "Aptos",
+    color: "#00D9A5",
+    theoreticalTps: 160000,
+    tech: "Block-STM",
+    description: "Optimistic parallel execution without pre-declared dependencies",
+    advantage: "8-16x speedup over sequential",
+  },
+  {
+    name: "Sui",
+    color: "#6FBCF0",
+    theoreticalTps: 120000,
+    tech: "Object-centric",
+    description: "Owned objects execute in parallel without consensus",
+    advantage: "Simple transactions bypass BFT",
+  },
+  {
+    name: "megaETH",
+    color: "#FF6B6B",
+    theoreticalTps: 100000,
+    tech: "Real-time",
+    description: "10ms block times with streaming proofs",
+    advantage: "Optimized for latency over throughput",
+  },
+  {
+    name: "Solana",
+    color: "#14F195",
+    theoreticalTps: 65000,
+    tech: "Sealevel",
+    description: "Transactions pre-declare account access lists",
+    advantage: "Enables parallel scheduling",
+  },
 ];
 
 interface Particle {
@@ -21,6 +49,7 @@ export function TpsRace() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>(0);
   const particlesRef = useRef<Map<string, Particle[]>>(new Map());
+  const [selectedChain, setSelectedChain] = useState(0); // Default to Aptos
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -181,6 +210,69 @@ export function TpsRace() {
         className="w-full rounded"
         style={{ height: "180px" }}
       />
+
+      {/* Educational Panel - Chain Comparison */}
+      <div className="mt-4 p-4 rounded-lg bg-white/5 border border-white/10">
+        <h4 className="text-sm font-bold mb-3" style={{ color: "var(--chrome-300)" }}>
+          Why Each Chain Achieves Its Throughput
+        </h4>
+
+        {/* Chain Selector */}
+        <div className="flex gap-2 mb-4">
+          {CHAINS.map((chain, i) => (
+            <button
+              key={chain.name}
+              onClick={() => setSelectedChain(i)}
+              className="px-3 py-1.5 rounded-lg text-xs font-mono transition-all"
+              style={{
+                backgroundColor: selectedChain === i ? chain.color + "30" : "rgba(255, 255, 255, 0.05)",
+                borderWidth: 1,
+                borderStyle: "solid",
+                borderColor: selectedChain === i ? chain.color : "rgba(255, 255, 255, 0.1)",
+                color: selectedChain === i ? chain.color : "var(--chrome-400)",
+              }}
+            >
+              {chain.name}
+            </button>
+          ))}
+        </div>
+
+        {/* Selected Chain Details */}
+        <div className="p-3 rounded-lg" style={{ backgroundColor: "rgba(255, 255, 255, 0.03)" }}>
+          <div className="flex items-center gap-3 mb-2">
+            <span
+              className="px-2 py-0.5 rounded text-xs font-bold"
+              style={{ backgroundColor: CHAINS[selectedChain].color, color: "#000" }}
+            >
+              {CHAINS[selectedChain].tech}
+            </span>
+            <span className="text-sm font-bold" style={{ color: CHAINS[selectedChain].color }}>
+              {(CHAINS[selectedChain].theoreticalTps / 1000).toLocaleString()}k TPS
+            </span>
+          </div>
+
+          <p className="text-xs mb-2" style={{ color: "var(--chrome-400)" }}>
+            {CHAINS[selectedChain].description}
+          </p>
+
+          <div className="flex items-center gap-2 text-xs">
+            <span style={{ color: "var(--chrome-600)" }}>Key advantage:</span>
+            <span style={{ color: "var(--chrome-300)" }}>{CHAINS[selectedChain].advantage}</span>
+          </div>
+        </div>
+
+        {/* Aptos Highlight */}
+        {selectedChain === 0 && (
+          <div className="mt-3 pt-3 border-t border-white/10">
+            <p className="text-xs" style={{ color: "var(--chrome-500)" }}>
+              <span className="font-semibold" style={{ color: "#00D9A5" }}>Block-STM Innovation:</span>
+              {" "}Unlike Solana&apos;s Sealevel which requires transactions to pre-declare dependencies,
+              Block-STM speculatively executes all transactions in parallel and only re-executes on conflict.
+              This eliminates upfront overhead while maintaining deterministic results.
+            </p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }

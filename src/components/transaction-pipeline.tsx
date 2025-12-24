@@ -1,12 +1,20 @@
 "use client";
 
-import { useRef, useEffect, useMemo } from "react";
+import { useRef, useEffect, useMemo, useState } from "react";
 import { BlockStats, ConsensusStats } from "@/hooks/useAptosStream";
 
 interface TransactionPipelineProps {
   recentBlocks: BlockStats[];
   consensus: ConsensusStats | null;
   avgBlockTime: number;
+}
+
+// For the educational pipelining animation
+interface PipelineBlock {
+  id: number;
+  stage: number; // 0-4 for each stage
+  progress: number; // 0-1 within stage
+  color: string;
 }
 
 // Raptr consensus stages
@@ -35,10 +43,17 @@ export function TransactionPipeline({
   avgBlockTime,
 }: TransactionPipelineProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const eduCanvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>(0);
+  const eduAnimationRef = useRef<number>(0);
   const transactionsRef = useRef<Transaction[]>([]);
   const txIdRef = useRef(0);
   const lastBlockHeightRef = useRef(0);
+
+  // Educational animation state
+  const pipelineBlocksRef = useRef<PipelineBlock[]>([]);
+  const pipelineBlockIdRef = useRef(0);
+  const [activeBlocks, setActiveBlocks] = useState(0);
 
   // Get the latest block info
   const latestBlock = recentBlocks[0];
@@ -246,6 +261,138 @@ export function TransactionPipeline({
     };
   }, [avgBlockTime, estimatedFinality, currentRound, currentEpoch, latestBlock]);
 
+  // Educational animation - pipelining visualization
+  useEffect(() => {
+    const canvas = eduCanvasRef.current;
+    if (!canvas) return;
+
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+
+    let lastTime = 0;
+    let frameCount = 0;
+    const targetFPS = 30;
+    const frameInterval = 1000 / targetFPS;
+
+    const blockColors = ["#00D9A5", "#6FBCF0", "#F59E0B", "#A855F7", "#EC4899"];
+
+    const render = (timestamp: number) => {
+      if (timestamp - lastTime < frameInterval) {
+        eduAnimationRef.current = requestAnimationFrame(render);
+        return;
+      }
+      lastTime = timestamp;
+      frameCount++;
+
+      const dpr = window.devicePixelRatio || 1;
+      const rect = canvas.getBoundingClientRect();
+
+      if (canvas.width !== Math.floor(rect.width * dpr)) {
+        canvas.width = Math.floor(rect.width * dpr);
+        canvas.height = Math.floor(rect.height * dpr);
+        ctx.scale(dpr, dpr);
+      }
+
+      const width = rect.width;
+      const height = rect.height;
+
+      // Clear
+      ctx.fillStyle = "#0a0a0b";
+      ctx.fillRect(0, 0, width, height);
+
+      const stageHeight = 24;
+      const stageGap = 6;
+      const startY = 35;
+      const stageWidth = width - 80;
+      const stageStartX = 70;
+
+      // Spawn new block every ~40 frames
+      if (frameCount % 40 === 0 && pipelineBlocksRef.current.length < 8) {
+        pipelineBlocksRef.current.push({
+          id: pipelineBlockIdRef.current++,
+          stage: 0,
+          progress: 0,
+          color: blockColors[pipelineBlockIdRef.current % blockColors.length],
+        });
+      }
+
+      // Draw stage labels
+      const stageLabels = ["SUBMIT", "PROPOSE", "VOTE", "CERTIFY", "COMMIT"];
+      stageLabels.forEach((label, i) => {
+        const y = startY + i * (stageHeight + stageGap);
+        ctx.fillStyle = STAGES[i].color;
+        ctx.font = "bold 9px monospace";
+        ctx.textAlign = "right";
+        ctx.fillText(label, stageStartX - 8, y + stageHeight / 2 + 3);
+
+        // Stage track
+        ctx.fillStyle = "rgba(255, 255, 255, 0.05)";
+        ctx.beginPath();
+        ctx.roundRect(stageStartX, y, stageWidth, stageHeight, 4);
+        ctx.fill();
+      });
+
+      // Update and draw blocks
+      let activeCount = 0;
+      pipelineBlocksRef.current = pipelineBlocksRef.current.filter(block => {
+        block.progress += 0.015;
+
+        if (block.progress >= 1) {
+          block.stage++;
+          block.progress = 0;
+        }
+
+        if (block.stage >= 5) return false;
+
+        activeCount++;
+
+        const y = startY + block.stage * (stageHeight + stageGap);
+        const x = stageStartX + block.progress * stageWidth;
+        const blockWidth = 30;
+
+        // Draw block trail
+        ctx.fillStyle = block.color + "20";
+        ctx.beginPath();
+        ctx.roundRect(stageStartX, y + 2, x - stageStartX, stageHeight - 4, 3);
+        ctx.fill();
+
+        // Draw block
+        ctx.fillStyle = block.color;
+        ctx.beginPath();
+        ctx.roundRect(x - blockWidth / 2, y + 2, blockWidth, stageHeight - 4, 3);
+        ctx.fill();
+
+        // Block label
+        ctx.fillStyle = "#000";
+        ctx.font = "bold 8px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText(`B${block.id}`, x, y + stageHeight / 2 + 3);
+
+        return true;
+      });
+
+      setActiveBlocks(activeCount);
+
+      // Title
+      ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
+      ctx.font = "bold 10px system-ui";
+      ctx.textAlign = "left";
+      ctx.fillText("PIPELINING: Multiple blocks in flight", stageStartX, 18);
+
+      // Legend
+      ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+      ctx.font = "9px monospace";
+      ctx.textAlign = "right";
+      ctx.fillText(`${activeCount} blocks active`, width - 10, 18);
+
+      eduAnimationRef.current = requestAnimationFrame(render);
+    };
+
+    eduAnimationRef.current = requestAnimationFrame(render);
+
+    return () => cancelAnimationFrame(eduAnimationRef.current);
+  }, []);
+
   return (
     <div className="chrome-card p-4">
       <div className="flex items-center justify-between mb-3">
@@ -274,6 +421,64 @@ export function TransactionPipeline({
         className="w-full rounded"
         style={{ height: "140px" }}
       />
+
+      {/* Educational Panel */}
+      <div className="mt-4 p-4 rounded-lg bg-white/5 border border-white/10">
+        <div className="flex items-start gap-4">
+          {/* Animated Pipelining Diagram */}
+          <div className="flex-shrink-0">
+            <canvas
+              ref={eduCanvasRef}
+              className="rounded"
+              style={{ width: "280px", height: "180px" }}
+            />
+          </div>
+
+          {/* Explanation */}
+          <div className="flex-1 min-w-0">
+            <h4 className="text-sm font-bold mb-2" style={{ color: "#00D9A5" }}>
+              The 4-Hop Journey
+            </h4>
+
+            <div className="space-y-1.5 text-xs" style={{ color: "var(--chrome-400)" }}>
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: "#00D9A5" }} />
+                <span><strong>SUBMIT:</strong> TX enters mempool</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: "#6FBCF0" }} />
+                <span><strong>PROPOSE:</strong> Leader bundles into block</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: "#F59E0B" }} />
+                <span><strong>VOTE:</strong> Validators verify & sign (2f+1)</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: "#A855F7" }} />
+                <span><strong>CERTIFY:</strong> Quorum Certificate formed</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: "#00D9A5" }} />
+                <span><strong>COMMIT:</strong> Block finalized</span>
+              </div>
+            </div>
+
+            <div className="mt-3 pt-3 border-t border-white/10 space-y-1">
+              <div className="flex items-center justify-between text-xs">
+                <span style={{ color: "var(--chrome-500)" }}>
+                  <span className="font-semibold" style={{ color: "#00D9A5" }}>Why so fast?</span> Pipelining!
+                </span>
+                <span className="font-mono" style={{ color: "var(--chrome-600)" }}>
+                  ~{estimatedFinality}ms finality
+                </span>
+              </div>
+              <p className="text-xs" style={{ color: "var(--chrome-500)" }}>
+                Multiple blocks process concurrently through all stages, not sequentially.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
