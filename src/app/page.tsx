@@ -20,6 +20,7 @@ import { MoveExecutionPipeline } from "@/components/move-execution-pipeline";
 import { MoveVMPipeline } from "@/components/move-vm-pipeline";
 import { LoaderV2Parallel } from "@/components/loader-v2-parallel";
 import { LoaderV2Caching } from "@/components/loader-v2-caching";
+import { ArchonConsensus } from "@/components/archon-consensus";
 import { useAptosStream } from "@/hooks/useAptosStream";
 
 export default function Home() {
@@ -216,6 +217,25 @@ export default function Home() {
         {/* Velociraptr Optimistic Proposals */}
         <section className="mb-4">
           <VelociraptorProposals />
+        </section>
+
+        {/* Archon - Next Generation Section Header */}
+        <div className="mb-4 pt-6 border-t border-white/5">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="px-2 py-1 rounded text-[10px] font-bold" style={{ backgroundColor: "#F59E0B", color: "#000" }}>COMING 2026</span>
+            <h2 className="text-sm font-semibold tracking-wide" style={{ color: "var(--chrome-200)" }}>
+              Next: 10ms Block Times
+            </h2>
+          </div>
+          <p className="text-xs ml-8" style={{ color: "var(--chrome-500)" }}>
+            Velociraptr achieved ~50ms blocks. Archon takes it further with a primary-proxy leader architecture,
+            targeting ~10ms blocks and ~30ms finality — matching centralized exchange speeds while staying fully decentralized.
+          </p>
+        </div>
+
+        {/* Archon Consensus - Primary-Proxy Leader */}
+        <section className="mb-4">
+          <ArchonConsensus />
         </section>
 
         {/* Zaptos Parallel Pipeline */}
