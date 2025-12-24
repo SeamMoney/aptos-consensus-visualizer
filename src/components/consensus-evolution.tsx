@@ -6,12 +6,13 @@ import { useVisibility } from "@/hooks/useVisibility";
 /**
  * Mysticeti v2 vs Archon Architecture Comparison
  *
- * Shows the fundamental difference in approach:
- * - Mysticeti v2: DAG-based, 3 message rounds (theoretical minimum), ~180ms
- * - Archon: Co-located cluster eliminates WAN latency, ~10ms
+ * Two distinct visualizations:
+ * - Mysticeti v2: DAG with parallel proposals, 3 rounds, anchor commits
+ * - Archon: Timeline/Gantt chart showing how internal consensus + broadcast
+ *   is dramatically faster than 3 WAN rounds
  *
- * Key insight: Mysticeti optimizes NUMBER of rounds (3 is minimum for BFT)
- *              Archon optimizes WHERE rounds happen (same datacenter = no WAN)
+ * Key insight: Same number of "rounds" conceptually, but Archon's internal
+ * rounds happen in microseconds (same datacenter) vs Mysticeti's 60ms per round (WAN)
  */
 
 interface DAGBlock {
@@ -41,8 +42,7 @@ export const ConsensusEvolution = memo(function ConsensusEvolution() {
   const dagBlocksRef = useRef<DAGBlock[]>([]);
   const roundRef = useRef(1);
   const mysticetiLatencyRef = useRef(0);
-  const archonLatencyRef = useRef(0);
-  const archonPhaseRef = useRef<"internal" | "external" | "done">("internal");
+  const archonProgressRef = useRef(0);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -133,16 +133,15 @@ export const ConsensusEvolution = memo(function ConsensusEvolution() {
       ctx.fillStyle = "#0a0a0b";
       ctx.fillRect(0, 0, width, height);
 
-      // Animation cycle (240 frames = 8 seconds at 30fps)
-      const cycleProgress = (frame % 240) / 240;
+      // Animation cycle (300 frames = 10 seconds at 30fps)
+      const cycleProgress = (frame % 300) / 300;
 
       // Reset at cycle start
-      if (frame % 240 === 0) {
+      if (frame % 300 === 0) {
         dagBlocksRef.current = initDAG(width, height, mobile);
         roundRef.current = 1;
         mysticetiLatencyRef.current = 0;
-        archonLatencyRef.current = 0;
-        archonPhaseRef.current = "internal";
+        archonProgressRef.current = 0;
       }
 
       // Mysticeti: 3 rounds, each ~60ms WAN latency
@@ -160,17 +159,8 @@ export const ConsensusEvolution = memo(function ConsensusEvolution() {
         mysticetiLatencyRef.current = 180;
       }
 
-      // Archon: finishes in first 15% of cycle
-      if (cycleProgress < 0.05) {
-        archonPhaseRef.current = "internal";
-        archonLatencyRef.current = cycleProgress * 100; // ~5ms
-      } else if (cycleProgress < 0.12) {
-        archonPhaseRef.current = "external";
-        archonLatencyRef.current = 5 + (cycleProgress - 0.05) * 70; // ~5ms more
-      } else {
-        archonPhaseRef.current = "done";
-        archonLatencyRef.current = 10;
-      }
+      // Archon progress (completes in first 10% of cycle)
+      archonProgressRef.current = Math.min(cycleProgress * 10, 1);
 
       // Update DAG block visibility based on round
       dagBlocksRef.current.forEach(block => {
@@ -202,12 +192,12 @@ export const ConsensusEvolution = memo(function ConsensusEvolution() {
         ctx.stroke();
         ctx.setLineDash([]);
 
-        // Draw Archon section (bottom)
-        drawArchonSection(ctx, 0, dividerY + 5, width, height - dividerY - 45, padding, frame, mobile, archonPhaseRef.current);
+        // Draw Archon timeline section (bottom)
+        drawArchonTimelineSection(ctx, 0, dividerY + 5, width, height - dividerY - 45, padding, frame, mobile, archonProgressRef.current, mysticetiLatencyRef.current);
 
         // Latency comparison at bottom
         const barY = height - 35;
-        drawLatencyComparison(ctx, width, barY, mysticetiLatencyRef.current, archonLatencyRef.current, mobile);
+        drawLatencyComparison(ctx, width, barY, mysticetiLatencyRef.current, archonProgressRef.current * 10, mobile);
 
       } else {
         // === DESKTOP: SIDE BY SIDE ===
@@ -225,12 +215,12 @@ export const ConsensusEvolution = memo(function ConsensusEvolution() {
         ctx.stroke();
         ctx.setLineDash([]);
 
-        // Draw Archon section (right)
-        drawArchonSection(ctx, halfW, 0, halfW, height - 70, padding, frame, mobile, archonPhaseRef.current);
+        // Draw Archon timeline section (right)
+        drawArchonTimelineSection(ctx, halfW, 0, halfW, height - 70, padding, frame, mobile, archonProgressRef.current, mysticetiLatencyRef.current);
 
         // Latency comparison at bottom
         const barY = height - 50;
-        drawLatencyComparison(ctx, width, barY, mysticetiLatencyRef.current, archonLatencyRef.current, mobile);
+        drawLatencyComparison(ctx, width, barY, mysticetiLatencyRef.current, archonProgressRef.current * 10, mobile);
       }
 
       animationRef.current = requestAnimationFrame(render);
@@ -248,7 +238,7 @@ export const ConsensusEvolution = memo(function ConsensusEvolution() {
             Why Archon Is 18× Faster Than Mysticeti
           </h3>
           <p className="text-[9px] sm:text-xs" style={{ color: "var(--chrome-600)" }}>
-            {isMobile ? "DAG vs cluster consensus" : "Sui Mysticeti v2 (180ms) vs Aptos Archon (10ms)"}
+            {isMobile ? "DAG rounds vs timeline" : "Sui Mysticeti v2 (180ms) vs Aptos Archon (10ms)"}
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -266,7 +256,7 @@ export const ConsensusEvolution = memo(function ConsensusEvolution() {
       <canvas
         ref={canvasRef}
         className="w-full rounded"
-        style={{ height: isMobile ? "360px" : "300px" }}
+        style={{ height: isMobile ? "400px" : "340px" }}
       />
 
       {/* Protocol comparison */}
@@ -276,7 +266,7 @@ export const ConsensusEvolution = memo(function ConsensusEvolution() {
             Mysticeti v2 (Sui)
           </div>
           <div className="text-[8px] sm:text-[10px] mt-1" style={{ color: "var(--chrome-500)" }}>
-            3 message rounds (BFT minimum). All validators on WAN.
+            DAG: 3 rounds × ~60ms WAN = 180ms
           </div>
           <div className="text-xs sm:text-sm font-bold mt-1" style={{ color: "#6FBCF0" }}>
             ~180ms
@@ -287,7 +277,7 @@ export const ConsensusEvolution = memo(function ConsensusEvolution() {
             Archon (Aptos)
           </div>
           <div className="text-[8px] sm:text-[10px] mt-1" style={{ color: "var(--chrome-500)" }}>
-            Same rounds, but internal = ~5ms (no WAN).
+            Cluster BFT ~5ms + broadcast ~5ms
           </div>
           <div className="text-xs sm:text-sm font-bold mt-1" style={{ color: "#00D9A5" }}>
             ~10ms
@@ -301,7 +291,7 @@ export const ConsensusEvolution = memo(function ConsensusEvolution() {
           <span className="font-bold" style={{ color: "#00D9A5" }}>Key insight:</span>
           {isMobile
             ? " Mysticeti optimizes rounds (3 = BFT minimum). Archon optimizes location (same DC = no WAN)."
-            : " Mysticeti optimizes the NUMBER of rounds (3 is the theoretical minimum for BFT). Archon optimizes WHERE rounds happen—co-located nodes eliminate WAN latency entirely."
+            : " Both need ~3 message rounds for BFT. But Mysticeti's rounds cross the WAN (60ms each), while Archon's internal rounds happen in microseconds (same datacenter)."
           }
         </p>
       </div>
@@ -427,15 +417,15 @@ function drawMysticetiSection(
   ctx.textAlign = "center";
 
   if (currentRound < 3) {
-    ctx.fillText(`Waiting for Round ${currentRound + 1}...`, offsetX + width / 2, bottomY);
+    ctx.fillText(`Round ${currentRound}: ~60ms WAN latency each`, offsetX + width / 2, bottomY);
   } else {
     ctx.fillStyle = "#FFD700";
     ctx.fillText("★ Anchor block → Commit!", offsetX + width / 2, bottomY);
   }
 }
 
-// Draw Archon cluster section (same as before but with emphasis on comparison)
-function drawArchonSection(
+// Draw Archon as a timeline/Gantt chart - DIFFERENT from the PBFT view
+function drawArchonTimelineSection(
   ctx: CanvasRenderingContext2D,
   offsetX: number,
   offsetY: number,
@@ -444,7 +434,8 @@ function drawArchonSection(
   padding: number,
   frame: number,
   mobile: boolean,
-  phase: "internal" | "external" | "done"
+  progress: number,
+  mysticetiLatency: number
 ) {
   const titleY = offsetY + (mobile ? 16 : 25);
 
@@ -454,123 +445,191 @@ function drawArchonSection(
   ctx.textAlign = "left";
   ctx.fillText("ARCHON", offsetX + padding, titleY);
 
-  // Phase indicator
-  ctx.fillStyle = phase === "done" ? "#00D9A5" : "rgba(0, 217, 165, 0.6)";
+  // Status
+  const done = progress >= 1;
+  ctx.fillStyle = done ? "#00D9A5" : "rgba(0, 217, 165, 0.7)";
   ctx.font = mobile ? "bold 7px monospace" : "bold 9px monospace";
   ctx.textAlign = "right";
-  const phaseText = phase === "internal" ? "Internal..." : phase === "external" ? "Broadcast..." : "✓ Done!";
-  ctx.fillText(phaseText, offsetX + width - padding, titleY);
+  ctx.fillText(done ? "✓ DONE" : "Processing...", offsetX + width - padding, titleY);
 
-  const centerX = offsetX + width / 2;
-  const centerY = offsetY + height / 2 - (mobile ? 0 : 10);
-  const clusterRadius = mobile ? 20 : 30;
-  const externalRadius = mobile ? 50 : 75;
+  // Timeline visualization
+  const timelineY = offsetY + (mobile ? 50 : 70);
+  const timelineHeight = mobile ? 100 : 130;
+  const timelineLeft = offsetX + padding + 40;
+  const timelineRight = offsetX + width - padding - 10;
+  const timelineWidth = timelineRight - timelineLeft;
 
-  // External validators ring
+  // Time scale label
+  ctx.fillStyle = "rgba(255,255,255,0.3)";
+  ctx.font = mobile ? "5px system-ui" : "6px system-ui";
+  ctx.textAlign = "left";
+  ctx.fillText("Time →", timelineLeft, timelineY - 8);
+
+  // Draw time scale (0ms to 180ms to show comparison)
+  const timeMarks = [0, 60, 120, 180];
   ctx.strokeStyle = "rgba(255,255,255,0.1)";
   ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.arc(centerX, centerY, externalRadius, 0, Math.PI * 2);
-  ctx.stroke();
 
-  // External validators
-  const externalCount = mobile ? 6 : 8;
-  const externalNodes: { x: number; y: number }[] = [];
-  for (let i = 0; i < externalCount; i++) {
-    const angle = (i / externalCount) * Math.PI * 2 - Math.PI / 2;
-    const x = centerX + Math.cos(angle) * externalRadius;
-    const y = centerY + Math.sin(angle) * externalRadius;
-    externalNodes.push({ x, y });
-
-    const lit = phase === "done" || (phase === "external" && (frame % 60) > 30);
-    ctx.fillStyle = lit ? "#00D9A5" : "#00D9A5" + "40";
+  timeMarks.forEach(ms => {
+    const x = timelineLeft + (ms / 180) * timelineWidth;
     ctx.beginPath();
-    ctx.arc(x, y, mobile ? 4 : 6, 0, Math.PI * 2);
-    ctx.fill();
-  }
+    ctx.moveTo(x, timelineY);
+    ctx.lineTo(x, timelineY + timelineHeight);
+    ctx.stroke();
 
-  // Cluster background with "SAME DC" emphasis
-  ctx.fillStyle = "rgba(0, 217, 165, 0.15)";
-  ctx.beginPath();
-  ctx.arc(centerX, centerY, clusterRadius + 12, 0, Math.PI * 2);
-  ctx.fill();
-
-  ctx.strokeStyle = "#00D9A5" + "40";
-  ctx.lineWidth = 2;
-  ctx.setLineDash([3, 3]);
-  ctx.beginPath();
-  ctx.arc(centerX, centerY, clusterRadius + 12, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.setLineDash([]);
-
-  // "SAME DC" label
-  ctx.fillStyle = "#00D9A5";
-  ctx.font = mobile ? "bold 6px system-ui" : "bold 8px system-ui";
-  ctx.textAlign = "center";
-  ctx.fillText("SAME", centerX, centerY - clusterRadius - (mobile ? 16 : 22));
-  ctx.fillText("DATACENTER", centerX, centerY - clusterRadius - (mobile ? 8 : 12));
-
-  // Cluster nodes
-  const clusterCount = 5;
-  const clusterNodes: { x: number; y: number }[] = [];
-  for (let i = 0; i < clusterCount; i++) {
-    const angle = (i / clusterCount) * Math.PI * 2 - Math.PI / 2;
-    const x = centerX + Math.cos(angle) * clusterRadius;
-    const y = centerY + Math.sin(angle) * clusterRadius;
-    clusterNodes.push({ x, y });
-  }
-
-  // Internal messages (fast)
-  if (phase === "internal") {
-    ctx.strokeStyle = "#00D9A5";
-    ctx.lineWidth = 2;
-    const progress = ((frame % 20) / 20) * 3;
-
-    for (let i = 0; i < clusterCount; i++) {
-      for (let j = i + 1; j < clusterCount; j++) {
-        const p = Math.min(progress, 1);
-        const from = clusterNodes[i];
-        const to = clusterNodes[j];
-
-        ctx.globalAlpha = 0.7;
-        ctx.beginPath();
-        ctx.moveTo(from.x, from.y);
-        ctx.lineTo(from.x + (to.x - from.x) * p, from.y + (to.y - from.y) * p);
-        ctx.stroke();
-      }
-    }
-    ctx.globalAlpha = 1;
-    ctx.lineWidth = 1;
-  }
-
-  // Draw cluster nodes
-  clusterNodes.forEach((node) => {
-    const glowing = phase !== "internal" || (frame % 8) < 4;
-    ctx.shadowColor = "#00D9A5";
-    ctx.shadowBlur = glowing ? 15 : 8;
-    ctx.fillStyle = "#00D9A5";
-    ctx.beginPath();
-    ctx.arc(node.x, node.y, mobile ? 6 : 8, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.shadowBlur = 0;
+    ctx.fillStyle = "rgba(255,255,255,0.3)";
+    ctx.font = mobile ? "5px monospace" : "6px monospace";
+    ctx.textAlign = "center";
+    ctx.fillText(`${ms}ms`, x, timelineY + timelineHeight + 12);
   });
 
-  // External broadcast
-  if (phase === "external") {
-    ctx.strokeStyle = "#00D9A5";
-    ctx.lineWidth = 1.5;
-    ctx.globalAlpha = 0.6;
-    const progress = ((frame % 45) / 45) * 2;
+  // === MYSTICETI TIMELINE (for comparison) ===
+  const mystRow = timelineY + 15;
+  const rowHeight = mobile ? 22 : 28;
 
-    externalNodes.forEach((ext) => {
-      const p = Math.min(progress, 1);
-      ctx.beginPath();
-      ctx.moveTo(centerX, centerY);
-      ctx.lineTo(centerX + (ext.x - centerX) * p, centerY + (ext.y - centerY) * p);
-      ctx.stroke();
-    });
-    ctx.globalAlpha = 1;
+  // Mysticeti label
+  ctx.fillStyle = "#6FBCF0";
+  ctx.font = mobile ? "bold 6px system-ui" : "bold 7px system-ui";
+  ctx.textAlign = "right";
+  ctx.fillText("Mysticeti", timelineLeft - 5, mystRow + rowHeight / 2 + 2);
+
+  // 3 rounds, each 60ms
+  for (let r = 0; r < 3; r++) {
+    const roundX = timelineLeft + (r * 60 / 180) * timelineWidth;
+    const roundWidth = (60 / 180) * timelineWidth;
+    const roundProgress = Math.max(0, Math.min(1, (mysticetiLatency - r * 60) / 60));
+
+    // Background
+    ctx.fillStyle = "rgba(111, 188, 240, 0.15)";
+    ctx.fillRect(roundX, mystRow, roundWidth - 2, rowHeight);
+
+    // Fill based on progress
+    if (roundProgress > 0) {
+      ctx.fillStyle = "#6FBCF0";
+      ctx.fillRect(roundX, mystRow, (roundWidth - 2) * roundProgress, rowHeight);
+    }
+
+    // Round label
+    ctx.fillStyle = roundProgress > 0.5 ? "#fff" : "#6FBCF0";
+    ctx.font = mobile ? "bold 6px system-ui" : "bold 7px system-ui";
+    ctx.textAlign = "center";
+    ctx.fillText(`R${r + 1}`, roundX + roundWidth / 2, mystRow + rowHeight / 2 + 3);
+  }
+
+  // WAN latency annotations
+  ctx.fillStyle = "rgba(111, 188, 240, 0.5)";
+  ctx.font = mobile ? "4px system-ui" : "5px system-ui";
+  ctx.textAlign = "center";
+  ctx.fillText("60ms WAN", timelineLeft + (30 / 180) * timelineWidth, mystRow - 4);
+  ctx.fillText("60ms WAN", timelineLeft + (90 / 180) * timelineWidth, mystRow - 4);
+  ctx.fillText("60ms WAN", timelineLeft + (150 / 180) * timelineWidth, mystRow - 4);
+
+  // === ARCHON TIMELINE ===
+  const archRow = mystRow + rowHeight + 20;
+
+  // Archon label
+  ctx.fillStyle = "#00D9A5";
+  ctx.font = mobile ? "bold 6px system-ui" : "bold 7px system-ui";
+  ctx.textAlign = "right";
+  ctx.fillText("Archon", timelineLeft - 5, archRow + rowHeight / 2 + 2);
+
+  // Internal BFT phase (~5ms, very narrow)
+  const internalWidth = (5 / 180) * timelineWidth;
+  const internalProgress = Math.min(progress * 2, 1);
+
+  // Internal background
+  ctx.fillStyle = "rgba(0, 217, 165, 0.15)";
+  ctx.fillRect(timelineLeft, archRow, internalWidth, rowHeight);
+
+  // Internal fill
+  if (internalProgress > 0) {
+    ctx.fillStyle = "#00D9A5";
+    ctx.fillRect(timelineLeft, archRow, internalWidth * internalProgress, rowHeight);
+  }
+
+  // Broadcast phase (~5ms)
+  const broadcastX = timelineLeft + internalWidth + 2;
+  const broadcastWidth = (5 / 180) * timelineWidth;
+  const broadcastProgress = Math.max(0, Math.min(1, (progress - 0.5) * 2));
+
+  // Broadcast background
+  ctx.fillStyle = "rgba(0, 217, 165, 0.15)";
+  ctx.fillRect(broadcastX, archRow, broadcastWidth, rowHeight);
+
+  // Broadcast fill
+  if (broadcastProgress > 0) {
+    ctx.fillStyle = "#00D9A5" + "CC";
+    ctx.fillRect(broadcastX, archRow, broadcastWidth * broadcastProgress, rowHeight);
+  }
+
+  // Phase labels (if wide enough)
+  if (!mobile) {
+    ctx.fillStyle = internalProgress > 0.5 ? "#000" : "#00D9A5";
+    ctx.font = "bold 5px system-ui";
+    ctx.textAlign = "center";
+    ctx.fillText("BFT", timelineLeft + internalWidth / 2, archRow + rowHeight / 2 + 2);
+
+    ctx.fillStyle = broadcastProgress > 0.5 ? "#000" : "#00D9A5";
+    ctx.fillText("BC", broadcastX + broadcastWidth / 2, archRow + rowHeight / 2 + 2);
+  }
+
+  // Archon completion marker
+  if (done) {
+    const doneX = broadcastX + broadcastWidth + 10;
+    ctx.fillStyle = "#00D9A5";
+    ctx.font = mobile ? "bold 8px system-ui" : "bold 10px system-ui";
+    ctx.textAlign = "left";
+    ctx.fillText("✓ 10ms", doneX, archRow + rowHeight / 2 + 3);
+  }
+
+  // === SPEEDUP VISUALIZATION ===
+  const speedupRow = archRow + rowHeight + 25;
+
+  // Arrow showing 18× speedup
+  if (done) {
+    const mystEndX = timelineLeft + timelineWidth;
+    const archEndX = broadcastX + broadcastWidth;
+
+    // Draw bracket showing time saved
+    ctx.strokeStyle = "rgba(0, 217, 165, 0.5)";
     ctx.lineWidth = 1;
+    ctx.setLineDash([3, 3]);
+
+    // Horizontal line at Archon's completion
+    ctx.beginPath();
+    ctx.moveTo(archEndX, archRow + rowHeight / 2);
+    ctx.lineTo(archEndX, speedupRow);
+    ctx.stroke();
+
+    // Horizontal line at Mysticeti's completion (when done)
+    if (mysticetiLatency >= 180) {
+      ctx.beginPath();
+      ctx.moveTo(mystEndX, mystRow + rowHeight / 2);
+      ctx.lineTo(mystEndX, speedupRow);
+      ctx.stroke();
+
+      // Connecting line with "18× faster" label
+      ctx.beginPath();
+      ctx.moveTo(archEndX, speedupRow);
+      ctx.lineTo(mystEndX, speedupRow);
+      ctx.stroke();
+
+      ctx.setLineDash([]);
+
+      // 18× faster label
+      const midX = (archEndX + mystEndX) / 2;
+      ctx.fillStyle = "#00D9A5";
+      ctx.font = mobile ? "bold 8px system-ui" : "bold 10px system-ui";
+      ctx.textAlign = "center";
+      ctx.fillText("18× FASTER", midX, speedupRow - 5);
+
+      // Time saved
+      ctx.fillStyle = "rgba(0, 217, 165, 0.6)";
+      ctx.font = mobile ? "6px system-ui" : "7px system-ui";
+      ctx.fillText("170ms saved", midX, speedupRow + 12);
+    }
+
+    ctx.setLineDash([]);
   }
 
   // Bottom annotation
@@ -579,13 +638,11 @@ function drawArchonSection(
   ctx.font = mobile ? "bold 5px system-ui" : "bold 6px system-ui";
   ctx.textAlign = "center";
 
-  if (phase === "internal") {
-    ctx.fillText("Internal BFT: ~5ms (no WAN!)", centerX, bottomY);
-  } else if (phase === "external") {
-    ctx.fillText("Broadcast to network: ~5ms", centerX, bottomY);
+  if (!done) {
+    ctx.fillText("Co-located cluster: internal rounds in microseconds", offsetX + width / 2, bottomY);
   } else {
     ctx.fillStyle = "#00D9A5";
-    ctx.fillText("✓ Total: ~10ms (18× faster)", centerX, bottomY);
+    ctx.fillText("Same 3 BFT rounds, but internal = no WAN latency!", offsetX + width / 2, bottomY);
   }
 }
 
