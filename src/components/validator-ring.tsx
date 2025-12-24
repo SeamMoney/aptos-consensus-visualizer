@@ -1,7 +1,8 @@
 "use client";
 
-import { useRef, useEffect, useState, useMemo } from "react";
+import { useRef, useEffect, useState, useMemo, memo } from "react";
 import { ConsensusStats } from "@/hooks/useAptosStream";
+import { useVisibility } from "@/hooks/useVisibility";
 
 interface ValidatorRingProps {
   consensus: ConsensusStats | null;
@@ -16,11 +17,13 @@ interface TopValidator {
   normalizedPower: number;
 }
 
-export function ValidatorRing({ consensus }: ValidatorRingProps) {
+export const ValidatorRing = memo(function ValidatorRing({ consensus }: ValidatorRingProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>(0);
   const [hoveredValidator, setHoveredValidator] = useState<TopValidator | null>(null);
   const mousePos = useRef({ x: 0, y: 0 });
+  const isVisible = useVisibility(containerRef);
 
   // Process validators - get top 20 by voting power
   const { topValidators, otherStats } = useMemo(() => {
@@ -88,6 +91,12 @@ export function ValidatorRing({ consensus }: ValidatorRingProps) {
     canvas.addEventListener("mousemove", handleMouseMove);
 
     const render = (timestamp: number) => {
+      // Skip rendering when off-screen
+      if (!isVisible) {
+        animationRef.current = requestAnimationFrame(render);
+        return;
+      }
+
       // Throttle to target FPS
       if (timestamp - lastTime < frameInterval) {
         animationRef.current = requestAnimationFrame(render);
@@ -202,10 +211,10 @@ export function ValidatorRing({ consensus }: ValidatorRingProps) {
       cancelAnimationFrame(animationRef.current);
       canvas.removeEventListener("mousemove", handleMouseMove);
     };
-  }, [topValidators, otherStats, consensus]);
+  }, [topValidators, otherStats, consensus, isVisible]);
 
   return (
-    <div className="bg-black/30 rounded-xl p-4 border border-white/10 relative">
+    <div ref={containerRef} className="bg-black/30 rounded-xl p-4 border border-white/10 relative">
       <div className="flex items-center justify-between mb-2">
         <h3 className="text-sm font-medium text-white/80">Validator Ring</h3>
         <span className="text-xs text-emerald-400/60">Top 20 by Stake</span>
@@ -237,4 +246,4 @@ export function ValidatorRing({ consensus }: ValidatorRingProps) {
 
     </div>
   );
-}
+});

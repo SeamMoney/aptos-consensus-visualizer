@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, memo } from "react";
+import { useVisibility } from "@/hooks/useVisibility";
 
 // All chains with theoretical max TPS and technical explanation
 const CHAINS = [
@@ -45,11 +46,13 @@ interface Particle {
   size: number;
 }
 
-export function TpsRace() {
+export const TpsRace = memo(function TpsRace() {
+  const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>(0);
   const particlesRef = useRef<Map<string, Particle[]>>(new Map());
   const [selectedChain, setSelectedChain] = useState(0); // Default to Aptos
+  const isVisible = useVisibility(containerRef);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -66,10 +69,16 @@ export function TpsRace() {
     });
 
     let lastTime = 0;
-    const targetFPS = 60;
+    const targetFPS = 30; // Reduced from 60 for performance
     const frameInterval = 1000 / targetFPS;
 
     const render = (timestamp: number) => {
+      // Skip rendering when off-screen
+      if (!isVisible) {
+        animationRef.current = requestAnimationFrame(render);
+        return;
+      }
+
       if (timestamp - lastTime < frameInterval) {
         animationRef.current = requestAnimationFrame(render);
         return;
@@ -189,10 +198,10 @@ export function TpsRace() {
     return () => {
       cancelAnimationFrame(animationRef.current);
     };
-  }, []);
+  }, [isVisible]);
 
   return (
-    <div className="chrome-card p-4">
+    <div ref={containerRef} className="chrome-card p-4">
       <div className="flex items-center justify-between mb-3">
         <div>
           <h3 className="section-title">Throughput Comparison</h3>
@@ -212,18 +221,18 @@ export function TpsRace() {
       />
 
       {/* Educational Panel - Chain Comparison */}
-      <div className="mt-4 p-4 rounded-lg bg-white/5 border border-white/10">
+      <div className="mt-4 p-3 sm:p-4 rounded-lg bg-white/5 border border-white/10">
         <h4 className="text-sm font-bold mb-3" style={{ color: "var(--chrome-300)" }}>
           Why Each Chain Achieves Its Throughput
         </h4>
 
         {/* Chain Selector */}
-        <div className="flex gap-2 mb-4">
+        <div className="flex flex-wrap gap-2 mb-4">
           {CHAINS.map((chain, i) => (
             <button
               key={chain.name}
               onClick={() => setSelectedChain(i)}
-              className="px-3 py-1.5 rounded-lg text-xs font-mono transition-all"
+              className="px-2 sm:px-3 py-1 sm:py-1.5 rounded-lg text-[10px] sm:text-xs font-mono transition-all"
               style={{
                 backgroundColor: selectedChain === i ? chain.color + "30" : "rgba(255, 255, 255, 0.05)",
                 borderWidth: 1,
@@ -275,4 +284,4 @@ export function TpsRace() {
       </div>
     </div>
   );
-}
+});

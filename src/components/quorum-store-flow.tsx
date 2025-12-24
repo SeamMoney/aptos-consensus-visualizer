@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, memo } from "react";
+import { useVisibility } from "@/hooks/useVisibility";
 
 interface QuorumStoreFlowProps {
   tps: number;
@@ -33,13 +34,14 @@ interface StreamingBatch {
 }
 
 const STAGES = [
-  { name: "MEMPOOL", color: "#6B7280", x: 0.1 },
-  { name: "BATCH", color: "#3B82F6", x: 0.3 },
-  { name: "DISSEMINATE", color: "#F59E0B", x: 0.55 },
-  { name: "CONSENSUS", color: "#00D9A5", x: 0.85 },
+  { name: "MEMPOOL", color: "#6B7280", x: 0.05 },
+  { name: "BATCH", color: "#3B82F6", x: 0.25 },
+  { name: "DISSEMINATE", color: "#F59E0B", x: 0.50 },
+  { name: "CONSENSUS", color: "#00D9A5", x: 0.78 },
 ];
 
-export function QuorumStoreFlow({ tps }: QuorumStoreFlowProps) {
+export const QuorumStoreFlow = memo(function QuorumStoreFlow({ tps }: QuorumStoreFlowProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const eduCanvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>(0);
@@ -49,6 +51,7 @@ export function QuorumStoreFlow({ tps }: QuorumStoreFlowProps) {
   const [batchCount, setBatchCount] = useState(0);
   const [signatures, setSignatures] = useState(0);
   const [proofOfStore, setProofOfStore] = useState(false);
+  const isVisible = useVisibility(containerRef);
 
   // Educational animation state
   const validatorsRef = useRef<ValidatorNode[]>([]);
@@ -71,6 +74,12 @@ export function QuorumStoreFlow({ tps }: QuorumStoreFlowProps) {
     const spawnInterval = 800;
 
     const render = (timestamp: number) => {
+      // Skip rendering when off-screen
+      if (!isVisible) {
+        animationRef.current = requestAnimationFrame(render);
+        return;
+      }
+
       if (timestamp - lastTime < frameInterval) {
         animationRef.current = requestAnimationFrame(render);
         return;
@@ -109,38 +118,41 @@ export function QuorumStoreFlow({ tps }: QuorumStoreFlowProps) {
         setBatchCount(batchIdRef.current);
       }
 
-      // Draw pipeline stages
+      // Draw pipeline stages - responsive sizing
+      const stageGap = Math.max(4, width * 0.01);
       STAGES.forEach((stage, idx) => {
         const stageX = stage.x * width;
-        const stageWidth = idx < 3 ? (STAGES[idx + 1].x - stage.x) * width - 10 : width * 0.12;
+        const nextX = idx < 3 ? STAGES[idx + 1].x * width : width * 0.95;
+        const stageWidth = nextX - stageX - stageGap;
 
         // Stage background
         ctx.fillStyle = stage.color + "20";
         ctx.beginPath();
-        ctx.roundRect(stageX, pipeY - pipeHeight / 2, stageWidth, pipeHeight, 8);
+        ctx.roundRect(stageX, pipeY - pipeHeight / 2, stageWidth, pipeHeight, 6);
         ctx.fill();
 
         // Stage border
         ctx.strokeStyle = stage.color + "40";
         ctx.lineWidth = 1;
         ctx.beginPath();
-        ctx.roundRect(stageX, pipeY - pipeHeight / 2, stageWidth, pipeHeight, 8);
+        ctx.roundRect(stageX, pipeY - pipeHeight / 2, stageWidth, pipeHeight, 6);
         ctx.stroke();
 
-        // Stage label
+        // Stage label - smaller on mobile
         ctx.fillStyle = stage.color;
-        ctx.font = "bold 10px monospace";
+        const fontSize = width < 400 ? 8 : 10;
+        ctx.font = `bold ${fontSize}px monospace`;
         ctx.textAlign = "center";
-        ctx.fillText(stage.name, stageX + stageWidth / 2, pipeY - pipeHeight / 2 - 10);
+        ctx.fillText(stage.name, stageX + stageWidth / 2, pipeY - pipeHeight / 2 - 8);
 
         // Arrow between stages
         if (idx < 3) {
-          const arrowX = stageX + stageWidth + 5;
+          const arrowX = stageX + stageWidth + 1;
           ctx.fillStyle = "rgba(255, 255, 255, 0.3)";
           ctx.beginPath();
-          ctx.moveTo(arrowX, pipeY - 5);
-          ctx.lineTo(arrowX + 8, pipeY);
-          ctx.lineTo(arrowX, pipeY + 5);
+          ctx.moveTo(arrowX, pipeY - 4);
+          ctx.lineTo(arrowX + stageGap - 2, pipeY);
+          ctx.lineTo(arrowX, pipeY + 4);
           ctx.fill();
         }
       });
@@ -151,28 +163,36 @@ export function QuorumStoreFlow({ tps }: QuorumStoreFlowProps) {
       }
 
       // Update and draw batches
+      const moveSpeed = Math.max(2, width * 0.008); // Responsive speed
       for (let i = batchesRef.current.length - 1; i >= 0; i--) {
         const batch = batchesRef.current[i];
 
-        // Move batch through stages
-        const targetX = STAGES[Math.min(batch.stage, 3)].x * width + 20;
+        // Calculate target position for current stage
+        const stageX = STAGES[Math.min(batch.stage, 3)].x * width;
+        const nextX = batch.stage < 3 ? STAGES[batch.stage + 1].x * width : width * 0.95;
+        const stageMidX = stageX + (nextX - stageX) * 0.5;
 
-        if (batch.x < targetX) {
-          batch.x += 3; // Faster movement
+        // Move batch towards stage center
+        if (batch.x < stageMidX - moveSpeed) {
+          batch.x += moveSpeed;
         } else {
+          // At stage center - process stage logic
           if (batch.stage === 2) {
-            batch.quorumProgress += 0.03;
+            // DISSEMINATE: wait for quorum
+            batch.quorumProgress += 0.025;
             if (batch.quorumProgress >= 1) {
               batch.stage++;
             }
           } else if (batch.stage < 3) {
+            // Progress to next stage
             batch.stage++;
           } else {
-            if (batch.x > width * 0.92) {
+            // CONSENSUS stage - move to exit
+            batch.x += moveSpeed;
+            if (batch.x > width * 0.98) {
               batchesRef.current.splice(i, 1);
               continue;
             }
-            batch.x += 3;
           }
         }
 
@@ -234,9 +254,9 @@ export function QuorumStoreFlow({ tps }: QuorumStoreFlowProps) {
     animationRef.current = requestAnimationFrame(render);
 
     return () => cancelAnimationFrame(animationRef.current);
-  }, [tps]);
+  }, [tps, isVisible]);
 
-  // Educational animation - validator network with parallel batch streaming
+  // Educational animation - detailed Narwhal-based Quorum Store visualization
   useEffect(() => {
     const canvas = eduCanvasRef.current;
     if (!canvas) return;
@@ -244,20 +264,22 @@ export function QuorumStoreFlow({ tps }: QuorumStoreFlowProps) {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    // Initialize validators in a network layout
-    const initValidators = (width: number, height: number) => {
-      const numValidators = 7;
-      const centerX = width / 2;
-      const centerY = height / 2;
-      const radius = Math.min(width, height) * 0.35;
+    const NUM_VALIDATORS = 7;
+    const QUORUM = 5; // 2f+1 where f=2
 
-      validatorsRef.current = Array.from({ length: numValidators }, (_, i) => {
-        const angle = (i / numValidators) * Math.PI * 2 - Math.PI / 2;
+    // Initialize validators in a ring layout
+    const initValidators = (width: number, height: number) => {
+      const centerX = width / 2;
+      const centerY = height / 2 + 10;
+      const radius = Math.min(width, height) * 0.36;
+
+      validatorsRef.current = Array.from({ length: NUM_VALIDATORS }, (_, i) => {
+        const angle = (i / NUM_VALIDATORS) * Math.PI * 2 - Math.PI / 2;
         return {
           id: i,
           x: centerX + Math.cos(angle) * radius,
           y: centerY + Math.sin(angle) * radius,
-          hasData: i === 0, // First validator (leader) has data initially
+          hasData: false,
           isSigning: false,
           signatureProgress: 0,
         };
@@ -265,10 +287,16 @@ export function QuorumStoreFlow({ tps }: QuorumStoreFlowProps) {
     };
 
     let lastTime = 0;
-    const targetFPS = 30;
+    const targetFPS = 24;
     const frameInterval = 1000 / targetFPS;
 
     const render = (timestamp: number) => {
+      // Skip rendering when off-screen
+      if (!isVisible) {
+        eduAnimationRef.current = requestAnimationFrame(render);
+        return;
+      }
+
       if (timestamp - lastTime < frameInterval) {
         eduAnimationRef.current = requestAnimationFrame(render);
         return;
@@ -287,53 +315,53 @@ export function QuorumStoreFlow({ tps }: QuorumStoreFlowProps) {
 
       const width = rect.width;
       const height = rect.height;
-      const now = Date.now();
 
       // Clear
       ctx.fillStyle = "#0a0a0b";
       ctx.fillRect(0, 0, width, height);
 
       const centerX = width / 2;
-      const centerY = height / 2;
+      const centerY = height / 2 + 10;
 
-      // Phase management
+      // Slower phase management for educational clarity
       phaseTimerRef.current++;
 
-      // Phase 0: Streaming batches between validators
+      // ========== PHASE 0: Batch Creation & Dissemination ==========
       if (eduPhaseRef.current === 0) {
-        // Spawn new streaming batches periodically
-        if (phaseTimerRef.current % 15 === 0 && streamingBatchesRef.current.length < 10) {
-          const fromV = Math.floor(Math.random() * validatorsRef.current.length);
-          let toV = Math.floor(Math.random() * validatorsRef.current.length);
-          while (toV === fromV) toV = Math.floor(Math.random() * validatorsRef.current.length);
+        // Mark worker (V0) as having data
+        if (validatorsRef.current[0]) validatorsRef.current[0].hasData = true;
 
-          streamingBatchesRef.current.push({
-            id: streamBatchIdRef.current++,
-            fromValidator: fromV,
-            toValidator: toV,
-            progress: 0,
-            color: ["#3B82F6", "#F59E0B", "#00D9A5", "#EC4899"][Math.floor(Math.random() * 4)],
-          });
+        // Spawn dissemination packets from worker to all validators
+        if (phaseTimerRef.current === 30) {
+          for (let i = 1; i < NUM_VALIDATORS; i++) {
+            streamingBatchesRef.current.push({
+              id: streamBatchIdRef.current++,
+              fromValidator: 0,
+              toValidator: i,
+              progress: 0,
+              color: "#3B82F6",
+            });
+          }
         }
 
-        // After enough streaming, move to signing phase
-        if (phaseTimerRef.current > 120) {
+        // After dissemination completes, move to signing
+        if (phaseTimerRef.current > 100) {
           eduPhaseRef.current = 1;
           phaseTimerRef.current = 0;
-          // Mark all validators as having data
           validatorsRef.current.forEach(v => {
-            v.hasData = true;
             v.isSigning = true;
           });
         }
       }
 
-      // Phase 1: Validators signing
+      // ========== PHASE 1: Signature Collection (STORE-VOTE) ==========
       if (eduPhaseRef.current === 1) {
         let signedCount = 0;
-        validatorsRef.current.forEach(v => {
-          if (v.isSigning) {
-            v.signatureProgress += 0.02 + Math.random() * 0.02;
+        validatorsRef.current.forEach((v, i) => {
+          if (v.isSigning && v.hasData) {
+            // Stagger signature completion for visual clarity
+            const delay = i * 0.01;
+            v.signatureProgress += 0.015 + delay;
             if (v.signatureProgress >= 1) {
               signedCount++;
             }
@@ -341,17 +369,17 @@ export function QuorumStoreFlow({ tps }: QuorumStoreFlowProps) {
         });
         setSignatures(signedCount);
 
-        // 2f+1 = 5 out of 7 validators
-        if (signedCount >= 5) {
+        // Once we have 2f+1 signatures, form PoS
+        if (signedCount >= QUORUM) {
           eduPhaseRef.current = 2;
           phaseTimerRef.current = 0;
           setProofOfStore(true);
         }
       }
 
-      // Phase 2: Proof of Store formed - show success then reset
+      // ========== PHASE 2: Proof of Store Certificate Formed ==========
       if (eduPhaseRef.current === 2) {
-        if (phaseTimerRef.current > 90) {
+        if (phaseTimerRef.current > 120) {
           // Reset for next cycle
           eduPhaseRef.current = 0;
           phaseTimerRef.current = 0;
@@ -359,15 +387,16 @@ export function QuorumStoreFlow({ tps }: QuorumStoreFlowProps) {
           setSignatures(0);
           setProofOfStore(false);
           validatorsRef.current.forEach(v => {
-            v.hasData = v.id === 0;
+            v.hasData = false;
             v.isSigning = false;
             v.signatureProgress = 0;
           });
         }
       }
 
-      // Draw connection lines (faded)
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.05)";
+      // ========== Draw Network Topology ==========
+      // Connection lines (mesh network)
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.04)";
       ctx.lineWidth = 1;
       validatorsRef.current.forEach((v1, i) => {
         validatorsRef.current.forEach((v2, j) => {
@@ -380,85 +409,99 @@ export function QuorumStoreFlow({ tps }: QuorumStoreFlowProps) {
         });
       });
 
-      // Draw streaming batches
-      streamingBatchesRef.current = streamingBatchesRef.current.filter(batch => {
-        batch.progress += 0.03;
-        if (batch.progress >= 1) {
-          // Mark destination validator as having data
-          const destV = validatorsRef.current[batch.toValidator];
+      // ========== Draw Dissemination Packets ==========
+      streamingBatchesRef.current = streamingBatchesRef.current.filter(packet => {
+        packet.progress += 0.02; // Slower for educational clarity
+        if (packet.progress >= 1) {
+          const destV = validatorsRef.current[packet.toValidator];
           if (destV) destV.hasData = true;
           return false;
         }
 
-        const fromV = validatorsRef.current[batch.fromValidator];
-        const toV = validatorsRef.current[batch.toValidator];
+        const fromV = validatorsRef.current[packet.fromValidator];
+        const toV = validatorsRef.current[packet.toValidator];
         if (!fromV || !toV) return false;
 
-        const x = fromV.x + (toV.x - fromV.x) * batch.progress;
-        const y = fromV.y + (toV.y - fromV.y) * batch.progress;
+        const x = fromV.x + (toV.x - fromV.x) * packet.progress;
+        const y = fromV.y + (toV.y - fromV.y) * packet.progress;
 
-        // Connection line
-        ctx.strokeStyle = batch.color + "40";
+        // Packet trail
+        ctx.strokeStyle = packet.color + "60";
         ctx.lineWidth = 2;
         ctx.beginPath();
         ctx.moveTo(fromV.x, fromV.y);
-        ctx.lineTo(toV.x, toV.y);
+        ctx.lineTo(x, y);
         ctx.stroke();
 
-        // Batch particle
+        // Packet glow
         ctx.beginPath();
-        const gradient = ctx.createRadialGradient(x, y, 0, x, y, 8);
-        gradient.addColorStop(0, batch.color);
-        gradient.addColorStop(0.5, batch.color + "80");
+        const gradient = ctx.createRadialGradient(x, y, 0, x, y, 10);
+        gradient.addColorStop(0, packet.color);
+        gradient.addColorStop(0.5, packet.color + "80");
         gradient.addColorStop(1, "transparent");
         ctx.fillStyle = gradient;
-        ctx.arc(x, y, 8, 0, Math.PI * 2);
+        ctx.arc(x, y, 10, 0, Math.PI * 2);
         ctx.fill();
 
+        // Packet core
         ctx.beginPath();
         ctx.fillStyle = "#fff";
         ctx.arc(x, y, 3, 0, Math.PI * 2);
         ctx.fill();
 
+        // Packet label (only show for first few)
+        if (packet.id < 3 && width > 300) {
+          ctx.fillStyle = "rgba(255, 255, 255, 0.8)";
+          ctx.font = "bold 7px monospace";
+          ctx.textAlign = "center";
+          ctx.fillText("BATCH", x, y - 14);
+        }
+
         return true;
       });
 
-      // Draw validators
+      // ========== Draw Validators ==========
       validatorsRef.current.forEach((v, i) => {
-        const isLeader = i === 0;
-        const nodeSize = isLeader ? 18 : 14;
+        const isWorker = i === 0;
+        const nodeSize = isWorker ? 16 : 12;
 
-        // Glow based on state
-        if (v.hasData || isLeader) {
+        // Outer glow based on state
+        if (proofOfStore) {
           ctx.beginPath();
-          ctx.fillStyle = proofOfStore
-            ? "rgba(0, 217, 165, 0.3)"
-            : v.signatureProgress >= 1
-              ? "rgba(16, 185, 129, 0.3)"
-              : "rgba(59, 130, 246, 0.2)";
+          ctx.fillStyle = "rgba(0, 217, 165, 0.25)";
+          ctx.arc(v.x, v.y, nodeSize + 10, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (v.signatureProgress >= 1) {
+          ctx.beginPath();
+          ctx.fillStyle = "rgba(16, 185, 129, 0.2)";
           ctx.arc(v.x, v.y, nodeSize + 8, 0, Math.PI * 2);
+          ctx.fill();
+        } else if (v.hasData) {
+          ctx.beginPath();
+          ctx.fillStyle = "rgba(59, 130, 246, 0.15)";
+          ctx.arc(v.x, v.y, nodeSize + 6, 0, Math.PI * 2);
           ctx.fill();
         }
 
         // Signature progress ring
-        if (v.isSigning && v.signatureProgress < 1) {
+        if (v.isSigning && v.signatureProgress > 0 && v.signatureProgress < 1) {
           ctx.beginPath();
           ctx.strokeStyle = "#F59E0B";
-          ctx.lineWidth = 3;
-          ctx.arc(v.x, v.y, nodeSize + 4, -Math.PI / 2, -Math.PI / 2 + v.signatureProgress * Math.PI * 2);
+          ctx.lineWidth = 2;
+          ctx.arc(v.x, v.y, nodeSize + 3, -Math.PI / 2, -Math.PI / 2 + v.signatureProgress * Math.PI * 2);
           ctx.stroke();
         }
 
-        // Completed signature checkmark ring
+        // Completed signature ring
         if (v.signatureProgress >= 1) {
           ctx.beginPath();
           ctx.strokeStyle = "#10B981";
-          ctx.lineWidth = 3;
-          ctx.arc(v.x, v.y, nodeSize + 4, 0, Math.PI * 2);
+          ctx.lineWidth = 2;
+          ctx.arc(v.x, v.y, nodeSize + 3, 0, Math.PI * 2);
           ctx.stroke();
         }
 
-        // Node
+        // Node body
         ctx.beginPath();
         ctx.fillStyle = proofOfStore
           ? "#00D9A5"
@@ -466,42 +509,68 @@ export function QuorumStoreFlow({ tps }: QuorumStoreFlowProps) {
             ? "#10B981"
             : v.hasData
               ? "#3B82F6"
-              : "rgba(255, 255, 255, 0.3)";
+              : "rgba(255, 255, 255, 0.25)";
         ctx.arc(v.x, v.y, nodeSize, 0, Math.PI * 2);
         ctx.fill();
 
-        // Label
-        ctx.fillStyle = proofOfStore || v.signatureProgress >= 1 ? "#000" : "#fff";
-        ctx.font = `bold ${isLeader ? 10 : 9}px monospace`;
+        // Node label
+        ctx.fillStyle = (proofOfStore || v.signatureProgress >= 1 || v.hasData) ? "#000" : "#fff";
+        ctx.font = `bold ${isWorker ? 9 : 8}px monospace`;
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText(isLeader ? "L" : `V${i}`, v.x, v.y);
+        ctx.fillText(isWorker ? "W" : `V${i}`, v.x, v.y);
+
+        // Signature indicator (σ_i)
+        if (v.signatureProgress >= 1 && width > 280) {
+          ctx.fillStyle = "#10B981";
+          ctx.font = "bold 7px monospace";
+          ctx.fillText("σ", v.x + nodeSize + 6, v.y - 4);
+        }
       });
 
-      // Center status
+      // ========== Center Status Display ==========
       ctx.textAlign = "center";
+
       if (eduPhaseRef.current === 0) {
+        // Phase 0: Batch Dissemination
         ctx.fillStyle = "#3B82F6";
-        ctx.font = "bold 11px system-ui";
-        ctx.fillText("Parallel Streaming", centerX, centerY - 8);
-        ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
-        ctx.font = "9px monospace";
-        ctx.fillText("Validators share batches", centerX, centerY + 8);
+        ctx.font = "bold 10px system-ui";
+        ctx.fillText("1. DISSEMINATE", centerX, centerY - 12);
+        ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
+        ctx.font = "8px monospace";
+        ctx.fillText("⟨BATCH, d, data⟩", centerX, centerY + 2);
+        ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+        ctx.font = "7px monospace";
+        ctx.fillText("Worker → All validators", centerX, centerY + 14);
       } else if (eduPhaseRef.current === 1) {
+        // Phase 1: Signature Collection
         ctx.fillStyle = "#F59E0B";
-        ctx.font = "bold 11px system-ui";
-        ctx.fillText("Collecting Signatures", centerX, centerY - 8);
-        ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
-        ctx.font = "9px monospace";
-        ctx.fillText(`${signatures}/5 (2f+1) signatures`, centerX, centerY + 8);
+        ctx.font = "bold 10px system-ui";
+        ctx.fillText("2. STORE-VOTE", centerX, centerY - 12);
+        ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
+        ctx.font = "8px monospace";
+        ctx.fillText(`⟨σ_i⟩ ${signatures}/${QUORUM}`, centerX, centerY + 2);
+        ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+        ctx.font = "7px monospace";
+        ctx.fillText("Collecting 2f+1 sigs", centerX, centerY + 14);
       } else {
+        // Phase 2: Proof of Store
         ctx.fillStyle = "#00D9A5";
-        ctx.font = "bold 11px system-ui";
-        ctx.fillText("Proof of Store!", centerX, centerY - 8);
-        ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
-        ctx.font = "9px monospace";
-        ctx.fillText("Batch availability guaranteed", centerX, centerY + 8);
+        ctx.font = "bold 10px system-ui";
+        ctx.fillText("3. PoS FORMED", centerX, centerY - 12);
+        ctx.fillStyle = "rgba(255, 255, 255, 0.6)";
+        ctx.font = "8px monospace";
+        ctx.fillText("⟨d, σ_agg⟩", centerX, centerY + 2);
+        ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+        ctx.font = "7px monospace";
+        ctx.fillText("Data availability proven!", centerX, centerY + 14);
       }
+
+      // ========== Title ==========
+      ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
+      ctx.font = "bold 9px system-ui";
+      ctx.textAlign = "center";
+      ctx.fillText("NARWHAL QUORUM STORE", centerX, 14);
 
       eduAnimationRef.current = requestAnimationFrame(render);
     };
@@ -509,10 +578,10 @@ export function QuorumStoreFlow({ tps }: QuorumStoreFlowProps) {
     eduAnimationRef.current = requestAnimationFrame(render);
 
     return () => cancelAnimationFrame(eduAnimationRef.current);
-  }, [signatures, proofOfStore]);
+  }, [signatures, proofOfStore, isVisible]);
 
   return (
-    <div className="chrome-card p-4">
+    <div ref={containerRef} className="chrome-card p-4">
       <div className="flex items-center justify-between mb-3">
         <div>
           <h3 className="section-title">Quorum Store</h3>
@@ -528,60 +597,73 @@ export function QuorumStoreFlow({ tps }: QuorumStoreFlowProps) {
       <canvas
         ref={canvasRef}
         className="w-full rounded"
-        style={{ height: "160px" }}
+        style={{ height: "200px" }}
       />
 
-      {/* Educational Panel */}
-      <div className="mt-4 p-4 rounded-lg bg-white/5 border border-white/10">
-        <div className="flex items-start gap-4">
-          {/* Animated Diagram */}
-          <div className="flex-shrink-0">
+      {/* Educational Panel - Narwhal Protocol Deep Dive */}
+      <div className="mt-4 p-3 sm:p-4 rounded-lg bg-white/5 border border-white/10">
+        <h4 className="text-sm font-bold mb-3" style={{ color: "#F59E0B" }}>
+          Narwhal Protocol: Data Availability Layer
+        </h4>
+
+        <div className="flex flex-col lg:flex-row items-center lg:items-start gap-4">
+          {/* Animated Diagram - BIGGER */}
+          <div className="w-full lg:w-auto lg:flex-shrink-0">
             <canvas
               ref={eduCanvasRef}
-              className="rounded"
-              style={{ width: "200px", height: "180px" }}
+              className="rounded w-full lg:w-[400px]"
+              style={{ height: "300px" }}
             />
           </div>
 
-          {/* Explanation */}
-          <div className="flex-1 min-w-0">
-            <h4 className="text-sm font-bold mb-2" style={{ color: "#F59E0B" }}>
-              How Quorum Store Works
-            </h4>
-
-            <div className="space-y-2 text-xs" style={{ color: "var(--chrome-400)" }}>
-              <div className="flex items-start gap-2">
-                <span className="w-4 h-4 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold" style={{ backgroundColor: "#3B82F6" }}>1</span>
-                <div>
-                  <span className="font-semibold" style={{ color: "#3B82F6" }}>Parallel Streaming:</span>
-                  <span className="ml-1">Validators continuously stream transaction batches to each other in parallel</span>
+          {/* Technical Explanation */}
+          <div className="flex-1 min-w-0 w-full">
+            <div className="space-y-3 text-xs" style={{ color: "var(--chrome-400)" }}>
+              {/* Phase 1 */}
+              <div className="p-2 rounded bg-white/5">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold" style={{ backgroundColor: "#3B82F6", color: "#fff" }}>1</span>
+                  <span className="font-bold" style={{ color: "#3B82F6" }}>DISSEMINATE</span>
                 </div>
+                <p className="ml-7" style={{ color: "var(--chrome-500)" }}>
+                  Worker broadcasts <code className="bg-white/10 px-1 rounded text-[10px]">⟨BATCH, d, data⟩</code> where <code className="bg-white/10 px-1 rounded text-[10px]">d = H(batch)</code>
+                </p>
               </div>
 
-              <div className="flex items-start gap-2">
-                <span className="w-4 h-4 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold" style={{ backgroundColor: "#F59E0B" }}>2</span>
-                <div>
-                  <span className="font-semibold" style={{ color: "#F59E0B" }}>Signature Collection:</span>
-                  <span className="ml-1">Batch gets 2f+1 signatures from validators who received it</span>
+              {/* Phase 2 */}
+              <div className="p-2 rounded bg-white/5">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold" style={{ backgroundColor: "#F59E0B", color: "#000" }}>2</span>
+                  <span className="font-bold" style={{ color: "#F59E0B" }}>STORE-VOTE</span>
                 </div>
+                <p className="ml-7" style={{ color: "var(--chrome-500)" }}>
+                  Validators store batch, reply with <code className="bg-white/10 px-1 rounded text-[10px]">⟨STORE-VOTE, d, σ_i⟩</code> partial signature
+                </p>
               </div>
 
-              <div className="flex items-start gap-2">
-                <span className="w-4 h-4 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold" style={{ backgroundColor: "#00D9A5" }}>3</span>
-                <div>
-                  <span className="font-semibold" style={{ color: "#00D9A5" }}>Proof of Store:</span>
-                  <span className="ml-1">Leader references batch by hash - validators already have the data!</span>
+              {/* Phase 3 */}
+              <div className="p-2 rounded bg-white/5">
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold" style={{ backgroundColor: "#00D9A5", color: "#000" }}>3</span>
+                  <span className="font-bold" style={{ color: "#00D9A5" }}>PROOF OF STORE</span>
                 </div>
+                <p className="ml-7" style={{ color: "var(--chrome-500)" }}>
+                  With 2f+1 signatures: <code className="bg-white/10 px-1 rounded text-[10px]">PoS = ⟨d, σ_agg⟩</code> — aggregated threshold signature
+                </p>
               </div>
             </div>
 
+            {/* Key Innovation */}
             <div className="mt-3 pt-3 border-t border-white/10">
-              <div className="flex items-center justify-between text-xs">
-                <span style={{ color: "var(--chrome-500)" }}>
-                  <span className="font-semibold" style={{ color: "#00D9A5" }}>Result:</span> 12x consensus throughput improvement
+              <div className="text-xs" style={{ color: "var(--chrome-500)" }}>
+                <span className="font-bold" style={{ color: "#00D9A5" }}>Key Innovation:</span> Decouples data dissemination from ordering. Leader only sends batch digest <code className="bg-white/10 px-1 rounded text-[10px]">d</code>, not full data — validators already have it.
+              </div>
+              <div className="flex items-center justify-between mt-2 text-xs">
+                <span style={{ color: "var(--chrome-600)" }}>
+                  O(n) message complexity · Horizontal scaling
                 </span>
-                <span className="font-mono" style={{ color: "var(--chrome-600)" }}>
-                  vs. leader-bottleneck BFT
+                <span className="font-mono font-bold" style={{ color: "#00D9A5" }}>
+                  12x throughput
                 </span>
               </div>
             </div>
@@ -590,4 +672,4 @@ export function QuorumStoreFlow({ tps }: QuorumStoreFlowProps) {
       </div>
     </div>
   );
-}
+});

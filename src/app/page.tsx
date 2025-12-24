@@ -12,6 +12,14 @@ import { BlockSTM } from "@/components/block-stm";
 import { LeaderReputation } from "@/components/leader-reputation";
 import { QuorumStoreFlow } from "@/components/quorum-store-flow";
 import { ShardinesView } from "@/components/shardines-view";
+import { VelociraptorProposals } from "@/components/velociraptr-proposals";
+import { ShardinesVisualization } from "@/components/shardines-visualization";
+import { ConsensusObserver } from "@/components/consensus-observer";
+import { ZaptosPipelining } from "@/components/zaptos-pipelining";
+import { MoveExecutionPipeline } from "@/components/move-execution-pipeline";
+import { MoveVMPipeline } from "@/components/move-vm-pipeline";
+import { LoaderV2Parallel } from "@/components/loader-v2-parallel";
+import { LoaderV2Caching } from "@/components/loader-v2-caching";
 import { useAptosStream } from "@/hooks/useAptosStream";
 
 export default function Home() {
@@ -27,7 +35,7 @@ export default function Home() {
               Aptos <span style={{ color: "var(--accent)" }}>Velociraptr</span>
             </h1>
             <p className="text-xs" style={{ color: "var(--chrome-600)" }}>
-              Real-time consensus visualization
+              Learn how Aptos processes 160,000+ transactions per second
             </p>
           </div>
           <div className={`live-badge ${!connected ? 'opacity-50' : ''}`}>
@@ -35,6 +43,35 @@ export default function Home() {
             {connected ? 'Mainnet' : 'Connecting...'}
           </div>
         </header>
+
+        {/* Introduction - What you'll learn */}
+        <div className="mb-6 p-4 rounded-lg bg-gradient-to-r from-emerald-500/10 to-transparent border border-emerald-500/20">
+          <h2 className="text-sm font-bold mb-2" style={{ color: "#00D9A5" }}>
+            How Aptos Works: A Visual Guide
+          </h2>
+          <p className="text-xs mb-3" style={{ color: "var(--chrome-400)" }}>
+            Scroll down to explore the complete journey of a transaction — from your wallet to the blockchain.
+            Each section shows a different piece of the puzzle:
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">
+            <div className="p-2 rounded bg-white/5">
+              <span className="font-bold" style={{ color: "#3B82F6" }}>1. Live Data</span>
+              <div style={{ color: "var(--chrome-500)" }}>Real blocks & TPS</div>
+            </div>
+            <div className="p-2 rounded bg-white/5">
+              <span className="font-bold" style={{ color: "#F59E0B" }}>2. Consensus</span>
+              <div style={{ color: "var(--chrome-500)" }}>How validators agree</div>
+            </div>
+            <div className="p-2 rounded bg-white/5">
+              <span className="font-bold" style={{ color: "#10B981" }}>3. Execution</span>
+              <div style={{ color: "var(--chrome-500)" }}>Running your code</div>
+            </div>
+            <div className="p-2 rounded bg-white/5">
+              <span className="font-bold" style={{ color: "#A855F7" }}>4. Optimizations</span>
+              <div style={{ color: "var(--chrome-500)" }}>Speed innovations</div>
+            </div>
+          </div>
+        </div>
 
         {/* Block Stream - Live block production */}
         <section className="mb-4">
@@ -77,12 +114,16 @@ export default function Home() {
         </div>
 
         {/* Consensus Tech Section Header */}
-        <div className="mb-4 pt-4 border-t border-white/5">
-          <h2 className="text-sm font-semibold tracking-wide mb-1" style={{ color: "var(--chrome-300)" }}>
-            CONSENSUS TECHNOLOGY
-          </h2>
-          <p className="text-xs" style={{ color: "var(--chrome-600)" }}>
-            Raptr, Block-STM, Quorum Store, Shoal++, Shardines
+        <div className="mb-4 pt-6 border-t border-white/5">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{ backgroundColor: "#F59E0B", color: "#000" }}>2</span>
+            <h2 className="text-sm font-semibold tracking-wide" style={{ color: "var(--chrome-200)" }}>
+              CONSENSUS: How Validators Agree
+            </h2>
+          </div>
+          <p className="text-xs ml-8" style={{ color: "var(--chrome-500)" }}>
+            Before your transaction is final, ~140 validators must agree it's valid.
+            These visualizations show the messaging protocol that makes that happen in ~400ms.
           </p>
         </div>
 
@@ -109,6 +150,88 @@ export default function Home() {
           <LeaderReputation consensus={stats.consensus} />
           <ShardinesView tps={stats.tps} />
         </div>
+
+        {/* Execution Section Header */}
+        <div className="mb-4 pt-6 border-t border-white/5">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{ backgroundColor: "#10B981", color: "#000" }}>3</span>
+            <h2 className="text-sm font-semibold tracking-wide" style={{ color: "var(--chrome-200)" }}>
+              EXECUTION: Running Your Smart Contract
+            </h2>
+          </div>
+          <p className="text-xs ml-8" style={{ color: "var(--chrome-500)" }}>
+            Once consensus is reached, your transaction runs on the Move VM.
+            These diagrams show how code goes from bytecode to state changes.
+          </p>
+        </div>
+
+        {/* Move Execution Pipeline - High-level overview */}
+        <section className="mb-4">
+          <MoveExecutionPipeline />
+        </section>
+
+        {/* Move VM Pipeline - Detailed 7-stage execution */}
+        <section className="mb-4">
+          <MoveVMPipeline />
+        </section>
+
+        {/* Loader V2 Section - Caching Deep Dive */}
+        <div className="mb-4 pt-6 border-t border-white/5">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="px-2 py-1 rounded text-[10px] font-bold" style={{ backgroundColor: "#00D9A5", color: "#000" }}>DEEP DIVE</span>
+            <h2 className="text-sm font-semibold tracking-wide" style={{ color: "var(--chrome-200)" }}>
+              Loader V2: Why 60% Faster?
+            </h2>
+          </div>
+          <p className="text-xs ml-8" style={{ color: "var(--chrome-500)" }}>
+            The secret sauce: multi-level code caching. Instead of reloading smart contract code for every transaction,
+            Aptos keeps hot modules in memory — from per-thread (L1) to epoch-wide (L3) caches.
+          </p>
+        </div>
+
+        {/* Loader V2 Caching - L1/L2/L3 hierarchy */}
+        <section className="mb-4">
+          <LoaderV2Caching />
+        </section>
+
+        {/* Loader V2 Parallelization - Block-STM integration */}
+        <section className="mb-4">
+          <LoaderV2Parallel />
+        </section>
+
+        {/* Optimizations Section Header */}
+        <div className="mb-4 pt-6 border-t border-white/5">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{ backgroundColor: "#A855F7", color: "#fff" }}>4</span>
+            <h2 className="text-sm font-semibold tracking-wide" style={{ color: "var(--chrome-200)" }}>
+              OPTIMIZATIONS: Speed Innovations
+            </h2>
+          </div>
+          <p className="text-xs ml-8" style={{ color: "var(--chrome-500)" }}>
+            What makes Aptos the fastest blockchain? These cutting-edge techniques work together:
+            optimistic proposals, parallel pipelines, dynamic sharding, and observer nodes for scale.
+          </p>
+        </div>
+
+        {/* Velociraptr Optimistic Proposals */}
+        <section className="mb-4">
+          <VelociraptorProposals />
+        </section>
+
+        {/* Zaptos Parallel Pipeline */}
+        <section className="mb-4">
+          <ZaptosPipelining />
+        </section>
+
+        {/* Shardines Dynamic Sharding */}
+        <section className="mb-4">
+          <ShardinesVisualization />
+        </section>
+
+        {/* Consensus Observer */}
+        <section className="mb-4">
+          <ConsensusObserver />
+        </section>
 
         {/* Footer - Minimal */}
         <footer className="text-center py-4">

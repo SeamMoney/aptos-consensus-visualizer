@@ -1,7 +1,8 @@
 "use client";
 
-import { useMemo, useRef, useEffect, useState } from "react";
+import { useMemo, useRef, useEffect, useState, memo } from "react";
 import { ConsensusStats } from "@/hooks/useAptosStream";
+import { useVisibility } from "@/hooks/useVisibility";
 
 interface LeaderReputationProps {
   consensus: ConsensusStats | null;
@@ -16,7 +17,8 @@ interface AnimatedValidator {
   glowIntensity: number;
 }
 
-export function LeaderReputation({ consensus }: LeaderReputationProps) {
+export const LeaderReputation = memo(function LeaderReputation({ consensus }: LeaderReputationProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const validators = consensus?.validators || [];
   const currentProposer = consensus?.currentProposer || "";
   const eduCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -25,6 +27,7 @@ export function LeaderReputation({ consensus }: LeaderReputationProps) {
   const currentLeaderRef = useRef(0);
   const rotationTimerRef = useRef(0);
   const [leaderIndex, setLeaderIndex] = useState(0);
+  const isVisible = useVisibility(containerRef);
 
   // Calculate reputation scores based on voting power (proxy for actual reputation)
   const rankedValidators = useMemo(() => {
@@ -78,6 +81,12 @@ export function LeaderReputation({ consensus }: LeaderReputationProps) {
     const frameInterval = 1000 / targetFPS;
 
     const render = (timestamp: number) => {
+      // Skip rendering when off-screen
+      if (!isVisible) {
+        eduAnimationRef.current = requestAnimationFrame(render);
+        return;
+      }
+
       if (timestamp - lastTime < frameInterval) {
         eduAnimationRef.current = requestAnimationFrame(render);
         return;
@@ -98,7 +107,7 @@ export function LeaderReputation({ consensus }: LeaderReputationProps) {
       const height = rect.height;
       const centerX = width / 2;
       const centerY = height / 2;
-      const radius = Math.min(width, height) * 0.35;
+      const radius = Math.min(width, height) * 0.38;
 
       // Clear
       ctx.fillStyle = "#0a0a0b";
@@ -218,10 +227,10 @@ export function LeaderReputation({ consensus }: LeaderReputationProps) {
     eduAnimationRef.current = requestAnimationFrame(render);
 
     return () => cancelAnimationFrame(eduAnimationRef.current);
-  }, []);
+  }, [isVisible]);
 
   return (
-    <div className="chrome-card p-4">
+    <div ref={containerRef} className="chrome-card p-4">
       <div className="flex items-center justify-between mb-3">
         <div>
           <h3 className="section-title">Shoal++ Leader Reputation</h3>
@@ -324,53 +333,92 @@ export function LeaderReputation({ consensus }: LeaderReputationProps) {
         </span>
       </div>
 
-      {/* Educational Panel */}
+      {/* Educational Panel - BIGGER */}
       <div className="mt-4 p-4 rounded-lg bg-white/5 border border-white/10">
-        <div className="flex items-start gap-4">
-          {/* Animated Leader Rotation */}
-          <div className="flex-shrink-0">
-            <canvas
-              ref={eduCanvasRef}
-              className="rounded"
-              style={{ width: "180px", height: "180px" }}
-            />
+        <h4 className="text-sm font-bold mb-3" style={{ color: "#F59E0B" }}>
+          Why Reputation-Based Leaders?
+        </h4>
+
+        {/* Animated Leader Rotation - BIGGER */}
+        <div className="mb-4">
+          <canvas
+            ref={eduCanvasRef}
+            className="rounded w-full"
+            style={{ height: "280px" }}
+          />
+        </div>
+
+        {/* Simple Explanation for Non-Technical Users */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+          <div className="p-3 rounded bg-red-500/10 border border-red-500/20">
+            <div className="text-xs font-bold mb-2" style={{ color: "#EF4444" }}>
+              The Problem
+            </div>
+            <p className="text-xs" style={{ color: "var(--chrome-400)" }}>
+              In traditional blockchains, leaders are chosen randomly. If a slow or offline validator is picked,
+              <span className="font-semibold text-white"> everyone waits</span> — wasting precious time.
+            </p>
           </div>
 
-          {/* Explanation */}
-          <div className="flex-1 min-w-0">
-            <h4 className="text-sm font-bold mb-2" style={{ color: "#F59E0B" }}>
-              Why Reputation-Based Leaders?
-            </h4>
-
-            <div className="space-y-2 text-xs" style={{ color: "var(--chrome-400)" }}>
-              <div>
-                <span className="font-semibold" style={{ color: "#EF4444" }}>Problem:</span>
-                <span className="ml-1">Random leader selection can pick slow or failing validators, delaying the entire network.</span>
-              </div>
-
-              <div>
-                <span className="font-semibold" style={{ color: "#00D9A5" }}>Shoal++ Solution:</span>
-                <ul className="mt-1 ml-4 space-y-1 list-disc">
-                  <li>Track validator performance (successful proposals)</li>
-                  <li>Higher reputation = more likely to become leader</li>
-                  <li>Fast Anchors: Commit in 4 message delays (vs 10.5)</li>
-                </ul>
-              </div>
+          <div className="p-3 rounded bg-emerald-500/10 border border-emerald-500/20">
+            <div className="text-xs font-bold mb-2" style={{ color: "#00D9A5" }}>
+              The Shoal++ Solution
             </div>
+            <p className="text-xs" style={{ color: "var(--chrome-400)" }}>
+              Track each validator's <span className="font-semibold text-white">performance history</span>.
+              Reliable validators get picked more often. Bad actors get skipped automatically.
+            </p>
+          </div>
+        </div>
 
-            <div className="mt-3 pt-3 border-t border-white/10">
-              <div className="flex items-center justify-between text-xs">
-                <span style={{ color: "var(--chrome-500)" }}>
-                  <span className="font-semibold" style={{ color: "#00D9A5" }}>Result:</span> Up to 60% latency reduction
-                </span>
-                <span className="font-mono" style={{ color: "var(--chrome-600)" }}>
-                  reward good behavior
-                </span>
-              </div>
+        {/* How It Works - Step by Step */}
+        <div className="space-y-2 text-xs">
+          <div className="flex items-start gap-2 p-2 rounded bg-white/5">
+            <span className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold bg-blue-500 text-white">1</span>
+            <div>
+              <span className="font-bold" style={{ color: "#3B82F6" }}>Track Performance:</span>
+              <span className="ml-1" style={{ color: "var(--chrome-500)" }}>
+                Each time a validator successfully proposes a block, their reputation score increases.
+              </span>
             </div>
+          </div>
+
+          <div className="flex items-start gap-2 p-2 rounded bg-white/5">
+            <span className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold bg-amber-500 text-black">2</span>
+            <div>
+              <span className="font-bold" style={{ color: "#F59E0B" }}>Weighted Selection:</span>
+              <span className="ml-1" style={{ color: "var(--chrome-500)" }}>
+                Higher reputation = higher probability of being selected as the next leader. It's like a "credit score" for validators.
+              </span>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-2 p-2 rounded bg-white/5">
+            <span className="w-5 h-5 rounded-full flex-shrink-0 flex items-center justify-center text-[10px] font-bold bg-emerald-500 text-black">3</span>
+            <div>
+              <span className="font-bold" style={{ color: "#00D9A5" }}>Fast Anchors:</span>
+              <span className="ml-1" style={{ color: "var(--chrome-500)" }}>
+                Commit blocks in just 4 message hops instead of 10.5 — that's up to <span className="font-bold text-white">60% faster</span>!
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Result Banner */}
+        <div className="mt-4 p-3 rounded bg-gradient-to-r from-emerald-500/20 to-emerald-500/5 border border-emerald-500/30">
+          <div className="flex items-center justify-between">
+            <div>
+              <span className="text-xs font-bold" style={{ color: "#00D9A5" }}>Result:</span>
+              <span className="text-xs ml-2" style={{ color: "var(--chrome-400)" }}>
+                Network rewards good validators, punishes bad ones — automatically
+              </span>
+            </div>
+            <span className="text-lg font-bold font-mono" style={{ color: "#00D9A5" }}>
+              60%↓
+            </span>
           </div>
         </div>
       </div>
     </div>
   );
-}
+});

@@ -133,8 +133,8 @@ function parseVoteBitvec(bitvec: string, validators: ValidatorInfo[]): { partici
   const votes: ValidatorVote[] = [];
   const totalValidators = validators.length || 138;
 
-  // If no bitvec or no validators, assume all voted (can't show accurate data)
-  if (!bitvec || validators.length === 0) {
+  // If no bitvec, not a string, or no validators, assume all voted (can't show accurate data)
+  if (!bitvec || typeof bitvec !== 'string' || validators.length === 0) {
     for (let i = 0; i < totalValidators; i++) {
       votes.push({
         index: i,
@@ -456,8 +456,8 @@ export function useAptosStream() {
     // Start polling
     poll();
 
-    // Poll every 200ms (slightly slower for reliability)
-    pollIntervalRef.current = setInterval(poll, 200);
+    // Poll every 500ms (reduced from 200ms for better performance)
+    pollIntervalRef.current = setInterval(poll, 500);
 
     // Also check for stale data periodically
     const staleCheckInterval = setInterval(() => {

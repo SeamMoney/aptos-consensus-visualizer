@@ -1,6 +1,7 @@
 "use client";
 
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, memo } from "react";
+import { useVisibility } from "@/hooks/useVisibility";
 
 interface BlockSTMProps {
   tps: number;
@@ -39,9 +40,11 @@ const SPEED_OPTIONS = [
   { label: "2×", value: 2 },
 ];
 
-export function BlockSTM({ tps }: BlockSTMProps) {
+export const BlockSTM = memo(function BlockSTM({ tps }: BlockSTMProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>(0);
+  const isVisible = useVisibility(containerRef);
   const txRef = useRef<Transaction[]>([]);
   const memoryRef = useRef<MemoryKey[]>([
     { name: "balance_A", versions: [{ version: 0, txId: 0, value: 1000 }], color: KEY_COLORS["balance_A"] },
@@ -73,6 +76,12 @@ export function BlockSTM({ tps }: BlockSTMProps) {
     const frameInterval = 1000 / targetFPS;
 
     const render = (timestamp: number) => {
+      // Skip rendering when off-screen
+      if (!isVisible) {
+        animationRef.current = requestAnimationFrame(render);
+        return;
+      }
+
       if (timestamp - lastTime < frameInterval) {
         animationRef.current = requestAnimationFrame(render);
         return;
@@ -397,24 +406,24 @@ export function BlockSTM({ tps }: BlockSTMProps) {
 
     animationRef.current = requestAnimationFrame(render);
     return () => cancelAnimationFrame(animationRef.current);
-  }, [isPaused]);
+  }, [isPaused, isVisible]);
 
   return (
-    <div className="chrome-card p-4">
+    <div ref={containerRef} className="chrome-card p-4">
       {/* Header */}
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-0 mb-3">
         <div>
           <h3 className="section-title">Block-STM Parallel Execution</h3>
           <p className="text-xs" style={{ color: "var(--chrome-600)" }}>
             Software Transactional Memory with MVCC
           </p>
         </div>
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 sm:gap-3">
           {/* Speed Controls */}
           <div className="flex items-center gap-1 bg-white/5 rounded px-2 py-1">
             <button
               onClick={() => setIsPaused(!isPaused)}
-              className={`px-2 py-0.5 text-xs font-mono rounded transition-colors ${
+              className={`px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-xs font-mono rounded transition-colors ${
                 isPaused ? "bg-[#F59E0B] text-black" : "text-white/50 hover:text-white/80"
               }`}
             >
@@ -424,7 +433,7 @@ export function BlockSTM({ tps }: BlockSTMProps) {
               <button
                 key={opt.value}
                 onClick={() => setSpeed(opt.value)}
-                className={`px-2 py-0.5 text-xs font-mono rounded transition-colors ${
+                className={`px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-xs font-mono rounded transition-colors ${
                   speed === opt.value
                     ? "bg-[#00D9A5] text-black"
                     : "text-white/50 hover:text-white/80"
@@ -435,7 +444,7 @@ export function BlockSTM({ tps }: BlockSTMProps) {
             ))}
           </div>
           {/* Stats */}
-          <div className="flex items-center gap-3 text-xs font-mono">
+          <div className="flex items-center gap-2 sm:gap-3 text-[10px] sm:text-xs font-mono">
             <span style={{ color: "var(--chrome-500)" }}>
               <span style={{ color: "#10B981" }}>{stats.committed}</span> commits
             </span>
@@ -450,7 +459,7 @@ export function BlockSTM({ tps }: BlockSTMProps) {
       <canvas
         ref={canvasRef}
         className="w-full rounded"
-        style={{ height: "220px" }}
+        style={{ height: "280px" }}
       />
 
       {/* Live Event Log */}
@@ -459,17 +468,17 @@ export function BlockSTM({ tps }: BlockSTMProps) {
       </div>
 
       {/* How It Works Panel */}
-      <div className="mt-3 p-3 rounded bg-white/5">
+      <div className="mt-3 p-2 sm:p-3 rounded bg-white/5">
         <div className="text-xs font-bold mb-2" style={{ color: "var(--chrome-300)" }}>
           HOW BLOCK-STM WORKS
         </div>
-        <div className="grid grid-cols-4 gap-3 text-xs">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3 text-xs">
           <div className="p-2 rounded bg-white/5">
             <div className="font-bold mb-1 flex items-center gap-1">
               <span className="w-2 h-2 rounded-full bg-[#3B82F6]"></span>
               <span style={{ color: "#3B82F6" }}>Execute</span>
             </div>
-            <p style={{ color: "var(--chrome-500)" }}>
+            <p className="text-[10px] sm:text-xs" style={{ color: "var(--chrome-500)" }}>
               Run TX optimistically, record all reads & writes
             </p>
           </div>
@@ -478,7 +487,7 @@ export function BlockSTM({ tps }: BlockSTMProps) {
               <span className="w-2 h-2 rounded-full bg-[#F59E0B]"></span>
               <span style={{ color: "#F59E0B" }}>Validate</span>
             </div>
-            <p style={{ color: "var(--chrome-500)" }}>
+            <p className="text-[10px] sm:text-xs" style={{ color: "var(--chrome-500)" }}>
               Check if read versions are still current
             </p>
           </div>
@@ -487,7 +496,7 @@ export function BlockSTM({ tps }: BlockSTMProps) {
               <span className="w-2 h-2 rounded-full bg-[#EF4444]"></span>
               <span style={{ color: "#EF4444" }}>Conflict?</span>
             </div>
-            <p style={{ color: "var(--chrome-500)" }}>
+            <p className="text-[10px] sm:text-xs" style={{ color: "var(--chrome-500)" }}>
               Earlier TX wrote to key we read → abort & retry
             </p>
           </div>
@@ -496,7 +505,7 @@ export function BlockSTM({ tps }: BlockSTMProps) {
               <span className="w-2 h-2 rounded-full bg-[#10B981]"></span>
               <span style={{ color: "#10B981" }}>Commit</span>
             </div>
-            <p style={{ color: "var(--chrome-500)" }}>
+            <p className="text-[10px] sm:text-xs" style={{ color: "var(--chrome-500)" }}>
               Write new versions, TX is finalized
             </p>
           </div>
@@ -517,4 +526,4 @@ export function BlockSTM({ tps }: BlockSTMProps) {
       </div>
     </div>
   );
-}
+});

@@ -1,7 +1,8 @@
 "use client";
 
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, memo } from "react";
 import { ConsensusStats } from "@/hooks/useAptosStream";
+import { useVisibility } from "@/hooks/useVisibility";
 
 interface RaptrConsensusProps {
   consensus: ConsensusStats | null;
@@ -59,7 +60,8 @@ const SPEED_OPTIONS = [
   { label: "2×", value: 2 },
 ];
 
-export function RaptrConsensus({ consensus, avgBlockTime }: RaptrConsensusProps) {
+export const RaptrConsensus = memo(function RaptrConsensus({ consensus, avgBlockTime }: RaptrConsensusProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>(0);
   const packetsRef = useRef<Packet[]>([]);
@@ -71,6 +73,7 @@ export function RaptrConsensus({ consensus, avgBlockTime }: RaptrConsensusProps)
   const [currentStage, setCurrentStage] = useState(0);
   const [speed, setSpeed] = useState(1);
   const currentRound = consensus?.round || 0;
+  const isVisible = useVisibility(containerRef);
 
   // Update speed ref when state changes
   useEffect(() => {
@@ -93,6 +96,12 @@ export function RaptrConsensus({ consensus, avgBlockTime }: RaptrConsensusProps)
     const baseStageIntervalMs = 800; // Slow enough to observe at 1x speed
 
     const render = (timestamp: number) => {
+      // Skip rendering when off-screen
+      if (!isVisible) {
+        animationRef.current = requestAnimationFrame(render);
+        return;
+      }
+
       if (timestamp - lastTime < frameInterval) {
         animationRef.current = requestAnimationFrame(render);
         return;
@@ -195,14 +204,29 @@ export function RaptrConsensus({ consensus, avgBlockTime }: RaptrConsensusProps)
         ctx.fill();
 
         // Label
-        if (isLeader) {
-          ctx.fillStyle = "#000";
-          ctx.font = "bold 9px monospace";
-          ctx.textAlign = "center";
-          ctx.textBaseline = "middle";
-          ctx.fillText("L", x, y);
+        ctx.fillStyle = isLeader ? "#000" : "rgba(0, 0, 0, 0.8)";
+        ctx.font = `bold ${isLeader ? 9 : 7}px monospace`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(isLeader ? "L" : `V${i}`, x, y);
+
+        // Leader label above
+        if (isLeader && width > 300) {
+          ctx.fillStyle = "#00D9A5";
+          ctx.font = "bold 8px monospace";
+          ctx.fillText("LEADER", x, y - nodeSize - 14);
         }
       }
+
+      // Center label showing message flow direction
+      ctx.fillStyle = "rgba(255, 255, 255, 0.3)";
+      ctx.font = "8px system-ui";
+      ctx.textAlign = "center";
+      const flowLabel = stageRef.current === 0 || stageRef.current === 2 ? "L → V" : "V → L";
+      ctx.fillText(flowLabel, centerX, centerY - 5);
+      ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
+      ctx.font = "7px monospace";
+      ctx.fillText(stageRef.current === 0 || stageRef.current === 2 ? "broadcast" : "aggregate", centerX, centerY + 8);
 
       // Update and draw packets
       for (let i = packetsRef.current.length - 1; i >= 0; i--) {
@@ -306,26 +330,26 @@ export function RaptrConsensus({ consensus, avgBlockTime }: RaptrConsensusProps)
     animationRef.current = requestAnimationFrame(render);
 
     return () => cancelAnimationFrame(animationRef.current);
-  }, [avgBlockTime]);
+  }, [avgBlockTime, isVisible]);
 
   return (
-    <div className="chrome-card p-4">
+    <div ref={containerRef} className="chrome-card p-4">
       {/* Header */}
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-0 mb-3">
         <div>
           <h3 className="section-title">Raptr Consensus</h3>
           <p className="text-xs" style={{ color: "var(--chrome-600)" }}>
             4-hop BFT: Propose → Vote → Certify → Commit (~{Math.round(avgBlockTime * 4)}ms)
           </p>
         </div>
-        <div className="flex items-center gap-4">
+        <div className="flex items-center gap-2 sm:gap-4">
           {/* Speed Controls */}
           <div className="flex items-center gap-1 bg-white/5 rounded px-2 py-1">
             {SPEED_OPTIONS.map((opt) => (
               <button
                 key={opt.value}
                 onClick={() => setSpeed(opt.value)}
-                className={`px-2 py-0.5 text-xs font-mono rounded transition-colors ${
+                className={`px-1.5 sm:px-2 py-0.5 text-[10px] sm:text-xs font-mono rounded transition-colors ${
                   speed === opt.value
                     ? "bg-[#00D9A5] text-black"
                     : "text-white/50 hover:text-white/80"
@@ -336,7 +360,7 @@ export function RaptrConsensus({ consensus, avgBlockTime }: RaptrConsensusProps)
             ))}
           </div>
           {/* Round info */}
-          <span className="text-xs font-mono" style={{ color: "var(--chrome-500)" }}>
+          <span className="text-[10px] sm:text-xs font-mono" style={{ color: "var(--chrome-500)" }}>
             Round: <span style={{ color: "#00D9A5" }}>{currentRound.toLocaleString()}</span>
           </span>
         </div>
@@ -379,14 +403,14 @@ export function RaptrConsensus({ consensus, avgBlockTime }: RaptrConsensusProps)
       </div>
 
       {/* Protocol Summary */}
-      <div className="mt-2 flex items-center justify-between text-xs" style={{ color: "var(--chrome-600)" }}>
+      <div className="mt-2 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-1 sm:gap-0 text-xs" style={{ color: "var(--chrome-600)" }}>
         <span>
           Based on HotStuff-2 with optimistic linear communication
         </span>
-        <span className="font-mono">
+        <span className="font-mono text-[10px] sm:text-xs">
           O(n) message complexity · 2f+1 quorum
         </span>
       </div>
     </div>
   );
-}
+});

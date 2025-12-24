@@ -1,7 +1,8 @@
 "use client";
 
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, memo } from "react";
 import { BlockStats } from "@/hooks/useAptosStream";
+import { useVisibility } from "@/hooks/useVisibility";
 
 interface ConsensusRoundsChartProps {
   recentBlocks: BlockStats[];
@@ -13,11 +14,13 @@ interface RoundDataPoint {
   roundsPerSecond: number;
 }
 
-export function ConsensusRoundsChart({ recentBlocks }: ConsensusRoundsChartProps) {
+export const ConsensusRoundsChart = memo(function ConsensusRoundsChart({ recentBlocks }: ConsensusRoundsChartProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>(0);
   const [dataPoints, setDataPoints] = useState<RoundDataPoint[]>([]);
   const lastProcessedRef = useRef<number>(0);
+  const isVisible = useVisibility(containerRef);
 
   // Process blocks to calculate rounds per second
   useEffect(() => {
@@ -72,6 +75,12 @@ export function ConsensusRoundsChart({ recentBlocks }: ConsensusRoundsChartProps
     const frameInterval = 1000 / targetFPS;
 
     const render = (timestamp: number) => {
+      // Skip rendering when off-screen
+      if (!isVisible) {
+        animationRef.current = requestAnimationFrame(render);
+        return;
+      }
+
       if (timestamp - lastTime < frameInterval) {
         animationRef.current = requestAnimationFrame(render);
         return;
@@ -212,18 +221,18 @@ export function ConsensusRoundsChart({ recentBlocks }: ConsensusRoundsChartProps
     animationRef.current = requestAnimationFrame(render);
 
     return () => cancelAnimationFrame(animationRef.current);
-  }, [dataPoints]);
+  }, [dataPoints, isVisible]);
 
   return (
-    <div className="chrome-card p-4">
-      <div className="flex items-center justify-between mb-3">
+    <div ref={containerRef} className="chrome-card p-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-0 mb-3">
         <div>
           <h3 className="section-title">Consensus Rounds</h3>
           <p className="text-xs" style={{ color: "var(--chrome-600)" }}>
             Velociraptr 4-hop consensus speed
           </p>
         </div>
-        <div className="flex items-center gap-4 text-xs font-mono">
+        <div className="flex items-center gap-2 sm:gap-4 text-[10px] sm:text-xs font-mono">
           <span style={{ color: "var(--chrome-500)" }}>
             Round: <span style={{ color: "#F59E0B" }}>{currentRound.toLocaleString()}</span>
           </span>
@@ -240,4 +249,4 @@ export function ConsensusRoundsChart({ recentBlocks }: ConsensusRoundsChartProps
       />
     </div>
   );
-}
+});

@@ -1,15 +1,18 @@
 "use client";
 
-import { useRef, useEffect } from "react";
+import { useRef, useEffect, memo } from "react";
 import { useLatencyStorage } from "@/hooks/useLatencyStorage";
+import { useVisibility } from "@/hooks/useVisibility";
 
 interface LatencyChartProps {
   avgBlockTime: number;
 }
 
-export function LatencyChart({ avgBlockTime }: LatencyChartProps) {
+export const LatencyChart = memo(function LatencyChart({ avgBlockTime }: LatencyChartProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>(0);
+  const isVisible = useVisibility(containerRef);
 
   const { dataPoints, currentP50, currentP95, stats } = useLatencyStorage(avgBlockTime);
 
@@ -25,6 +28,12 @@ export function LatencyChart({ avgBlockTime }: LatencyChartProps) {
     const frameInterval = 1000 / targetFPS;
 
     const render = (timestamp: number) => {
+      // Skip rendering when off-screen
+      if (!isVisible) {
+        animationRef.current = requestAnimationFrame(render);
+        return;
+      }
+
       if (timestamp - lastTime < frameInterval) {
         animationRef.current = requestAnimationFrame(render);
         return;
@@ -163,18 +172,18 @@ export function LatencyChart({ avgBlockTime }: LatencyChartProps) {
     animationRef.current = requestAnimationFrame(render);
 
     return () => cancelAnimationFrame(animationRef.current);
-  }, [dataPoints]);
+  }, [dataPoints, isVisible]);
 
   return (
-    <div className="chrome-card p-4">
-      <div className="flex items-center justify-between mb-3">
+    <div ref={containerRef} className="chrome-card p-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-0 mb-3">
         <div>
           <h3 className="section-title">E2E Latency with Finality</h3>
           <p className="text-xs" style={{ color: "var(--chrome-600)" }}>
             p50 median · {stats.count} samples
           </p>
         </div>
-        <div className="flex items-center gap-4 text-xs font-mono">
+        <div className="flex items-center gap-2 sm:gap-4 text-[10px] sm:text-xs font-mono">
           <span style={{ color: "var(--chrome-500)" }}>
             p50: <span style={{ color: "#00D9A5" }}>{currentP50}ms</span>
           </span>
@@ -194,4 +203,4 @@ export function LatencyChart({ avgBlockTime }: LatencyChartProps) {
       />
     </div>
   );
-}
+});

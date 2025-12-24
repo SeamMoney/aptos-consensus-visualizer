@@ -1,74 +1,109 @@
 "use client";
 
-import { useRef, useEffect, useState } from "react";
+import { useRef, useEffect, useState, memo } from "react";
+import { useVisibility } from "@/hooks/useVisibility";
 
 interface ShardinesViewProps {
   tps: number;
 }
 
-interface Shard {
-  id: number;
-  throughput: number;
-  targetThroughput: number;
-  color: string;
-}
+/**
+ * Shardines View - Mobile-responsive visualization showing:
+ * - Desktop: Horizontal layout (Resource Graph → Partitioner → Shards → Merge)
+ * - Mobile: Vertical stacked layout with simplified elements
+ */
 
-// For the educational animation
-interface EduTransaction {
+interface Transaction {
   id: number;
   x: number;
   y: number;
   targetShard: number;
+  resources: number[];
+  phase: "incoming" | "partitioning" | "assigned" | "executing" | "merging" | "done";
   progress: number;
-  isCrossShard: boolean;
   color: string;
+  isCrossShard: boolean;
+  executionProgress: number;
 }
 
-interface EduShard {
+interface Shard {
   id: number;
   x: number;
   y: number;
   width: number;
+  height: number;
   load: number;
   color: string;
+  threads: Thread[];
+}
+
+interface Thread {
+  id: number;
+  busy: boolean;
+  txId: number | null;
+  progress: number;
+}
+
+interface Resource {
+  id: number;
+  x: number;
+  y: number;
+  name: string;
+  color: string;
+  accessCount: number;
 }
 
 const SHARD_COLORS = [
-  "#00D9A5", // Green
   "#3B82F6", // Blue
+  "#10B981", // Green
   "#F59E0B", // Amber
-  "#EC4899", // Pink
-  "#8B5CF6", // Purple
-  "#06B6D4", // Cyan
+  "#EF4444", // Red
 ];
 
-export function ShardinesView({ tps }: ShardinesViewProps) {
+const RESOURCE_NAMES = ["coin", "nft", "swap", "stake", "acct", "event"];
+
+const PHASES = [
+  {
+    name: "PARTITION",
+    title: "Hypergraph Partitioning",
+    desc: "Analyze transaction dependencies by shared resources",
+    detail: "Build graph where TXs are nodes, shared resources are hyperedges",
+  },
+  {
+    name: "ASSIGN",
+    title: "Shard Assignment",
+    desc: "Route transactions to shards to minimize cross-shard access",
+    detail: "Min-cut algorithm groups related TXs into same shard",
+  },
+  {
+    name: "EXECUTE",
+    title: "Parallel Execution",
+    desc: "Each shard runs Block-STM with multiple threads",
+    detail: "MVCC enables optimistic parallel execution per shard",
+  },
+  {
+    name: "MERGE",
+    title: "State Merge",
+    desc: "Aggregate state deltas from all shards atomically",
+    detail: "Deterministic ordering resolves cross-shard conflicts",
+  },
+];
+
+export const ShardinesView = memo(function ShardinesView({ tps }: ShardinesViewProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const eduCanvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>(0);
-  const eduAnimationRef = useRef<number>(0);
+  const isVisible = useVisibility(containerRef);
+
+  const [currentPhase, setCurrentPhase] = useState(0);
+  const [stats, setStats] = useState({ totalTps: 0, crossShardPct: 2.3 });
+  const [isMobile, setIsMobile] = useState(false);
+  const phaseTimerRef = useRef(0);
+
+  const transactionsRef = useRef<Transaction[]>([]);
   const shardsRef = useRef<Shard[]>([]);
-  const [totalTps, setTotalTps] = useState(0);
-  const [crossShardPct, setCrossShardPct] = useState(2.3);
-
-  // Educational animation state
-  const eduShardsRef = useRef<EduShard[]>([]);
-  const eduTransactionsRef = useRef<EduTransaction[]>([]);
-  const eduTxIdRef = useRef(0);
-  const [partitionPhase, setPartitionPhase] = useState<"partition" | "execute" | "merge">("partition");
-
-  // Initialize shards
-  useEffect(() => {
-    const numShards = 6;
-    const baseTps = 160000 / numShards; // Distribute theoretical max
-
-    shardsRef.current = Array.from({ length: numShards }, (_, i) => ({
-      id: i,
-      throughput: 0,
-      targetThroughput: baseTps + (Math.random() - 0.5) * baseTps * 0.3,
-      color: SHARD_COLORS[i % SHARD_COLORS.length],
-    }));
-  }, []);
+  const resourcesRef = useRef<Resource[]>([]);
+  const txIdRef = useRef(0);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -78,10 +113,15 @@ export function ShardinesView({ tps }: ShardinesViewProps) {
     if (!ctx) return;
 
     let lastTime = 0;
-    const targetFPS = 20;
+    const targetFPS = 30;
     const frameInterval = 1000 / targetFPS;
 
     const render = (timestamp: number) => {
+      if (!isVisible) {
+        animationRef.current = requestAnimationFrame(render);
+        return;
+      }
+
       if (timestamp - lastTime < frameInterval) {
         animationRef.current = requestAnimationFrame(render);
         return;
@@ -90,339 +130,676 @@ export function ShardinesView({ tps }: ShardinesViewProps) {
 
       const dpr = window.devicePixelRatio || 1;
       const rect = canvas.getBoundingClientRect();
-
-      if (canvas.width !== Math.floor(rect.width * dpr)) {
-        canvas.width = Math.floor(rect.width * dpr);
-        canvas.height = Math.floor(rect.height * dpr);
-        ctx.scale(dpr, dpr);
-      }
-
       const width = rect.width;
       const height = rect.height;
+
+      // Detect mobile (width < 500px)
+      const mobile = width < 500;
+      setIsMobile(mobile);
+
+      if (canvas.width !== Math.floor(width * dpr) || canvas.height !== Math.floor(height * dpr)) {
+        canvas.width = Math.floor(width * dpr);
+        canvas.height = Math.floor(height * dpr);
+        ctx.setTransform(1, 0, 0, 1, 0, 0);
+        ctx.scale(dpr, dpr);
+
+        // Initialize resources
+        resourcesRef.current = RESOURCE_NAMES.slice(0, mobile ? 4 : 6).map((name, i) => ({
+          id: i,
+          x: 0,
+          y: 0,
+          name,
+          color: SHARD_COLORS[i % SHARD_COLORS.length],
+          accessCount: 0,
+        }));
+
+        // Initialize shards
+        shardsRef.current = Array.from({ length: 4 }, (_, i) => ({
+          id: i,
+          x: 0,
+          y: 0,
+          width: 0,
+          height: 0,
+          load: 0,
+          color: SHARD_COLORS[i],
+          threads: Array.from({ length: mobile ? 2 : 4 }, (_, t) => ({
+            id: t,
+            busy: false,
+            txId: null,
+            progress: 0,
+          })),
+        }));
+      }
 
       // Clear
       ctx.fillStyle = "#0a0a0b";
       ctx.fillRect(0, 0, width, height);
 
-      const barHeight = 22;
-      const barGap = 10;
-      const startY = 45;
-      const labelWidth = 70;
-      const statsWidth = 80;
-      const barMaxWidth = width - labelWidth - statsWidth - 40;
+      // Phase timer
+      phaseTimerRef.current++;
+      const phaseDuration = 90;
 
-      // Update shard throughputs with smooth animation
-      let total = 0;
-      shardsRef.current.forEach((shard) => {
-        // Animate toward target with some variation
-        const variance = (Math.random() - 0.5) * 2000;
-        shard.targetThroughput = Math.max(20000, Math.min(35000, shard.targetThroughput + variance));
-        shard.throughput += (shard.targetThroughput - shard.throughput) * 0.1;
-        total += shard.throughput;
+      if (phaseTimerRef.current > phaseDuration) {
+        phaseTimerRef.current = 0;
+        const nextPhase = (currentPhase + 1) % 4;
+        setCurrentPhase(nextPhase);
+
+        if (nextPhase === 0) {
+          transactionsRef.current = [];
+          shardsRef.current.forEach(s => {
+            s.threads.forEach(t => { t.busy = false; t.txId = null; t.progress = 0; });
+          });
+        }
+      }
+
+      // Spawn transactions
+      if (currentPhase === 0 && phaseTimerRef.current % 15 === 0 && transactionsRef.current.length < (mobile ? 8 : 16)) {
+        const numResources = 1 + Math.floor(Math.random() * 2);
+        const resources = Array.from({ length: numResources }, () =>
+          Math.floor(Math.random() * resourcesRef.current.length)
+        ).filter((v, i, a) => a.indexOf(v) === i);
+
+        const isCrossShard = resources.length > 1 && Math.random() < 0.15;
+        const targetShard = Math.floor(Math.random() * shardsRef.current.length);
+
+        transactionsRef.current.push({
+          id: txIdRef.current++,
+          x: 20,
+          y: height / 2,
+          targetShard,
+          resources,
+          phase: "incoming",
+          progress: 0,
+          color: SHARD_COLORS[targetShard],
+          isCrossShard,
+          executionProgress: 0,
+        });
+      }
+
+      if (mobile) {
+        renderMobile(ctx, width, height, timestamp);
+      } else {
+        renderDesktop(ctx, width, height, timestamp);
+      }
+
+      // Update stats
+      const crossShardCount = transactionsRef.current.filter(t => t.isCrossShard).length;
+      setStats({
+        totalTps: Math.round(160000 + (Math.random() - 0.5) * 10000),
+        crossShardPct: crossShardCount > 0 ? (crossShardCount / Math.max(1, transactionsRef.current.length) * 100) : 2.3,
       });
-
-      setTotalTps(Math.round(total));
-
-      // Vary cross-shard percentage
-      setCrossShardPct(prev => {
-        const newVal = prev + (Math.random() - 0.5) * 0.2;
-        return Math.max(1.5, Math.min(4, newVal));
-      });
-
-      const maxThroughput = Math.max(...shardsRef.current.map(s => s.throughput));
-
-      // Draw shards
-      shardsRef.current.forEach((shard, i) => {
-        const y = startY + i * (barHeight + barGap);
-
-        // Shard label
-        ctx.fillStyle = shard.color;
-        ctx.font = "bold 11px monospace";
-        ctx.textAlign = "left";
-        ctx.fillText(`SHARD ${shard.id}`, 20, y + barHeight / 2 + 4);
-
-        // Bar background
-        ctx.fillStyle = "rgba(255, 255, 255, 0.05)";
-        ctx.beginPath();
-        ctx.roundRect(labelWidth, y, barMaxWidth, barHeight, 4);
-        ctx.fill();
-
-        // Progress bar
-        const barWidth = (shard.throughput / maxThroughput) * barMaxWidth * 0.9;
-        ctx.fillStyle = shard.color;
-        ctx.beginPath();
-        ctx.roundRect(labelWidth, y, barWidth, barHeight, 4);
-        ctx.fill();
-
-        // Throughput label
-        const tpsK = Math.round(shard.throughput / 1000);
-        ctx.fillStyle = "rgba(255, 255, 255, 0.7)";
-        ctx.font = "10px monospace";
-        ctx.textAlign = "right";
-        ctx.fillText(`${tpsK}k TPS`, width - 20, y + barHeight / 2 + 4);
-      });
-
-      // Divider line
-      const dividerY = startY + shardsRef.current.length * (barHeight + barGap) + 5;
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.1)";
-      ctx.lineWidth = 1;
-      ctx.beginPath();
-      ctx.moveTo(labelWidth, dividerY);
-      ctx.lineTo(width - 20, dividerY);
-      ctx.stroke();
-
-      // Total row
-      const totalY = dividerY + 15;
-      ctx.fillStyle = "#00D9A5";
-      ctx.font = "bold 11px monospace";
-      ctx.textAlign = "left";
-      ctx.fillText("TOTAL", 20, totalY + 4);
-
-      ctx.fillStyle = "#00D9A5";
-      ctx.font = "bold 12px monospace";
-      ctx.textAlign = "right";
-      ctx.fillText(`${Math.round(total / 1000)}k TPS`, width - 20, totalY + 4);
-
-      // Cross-shard indicator
-      ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
-      ctx.font = "10px monospace";
-      ctx.textAlign = "center";
-      ctx.fillText(`Cross-shard: ${crossShardPct.toFixed(1)}%`, width / 2, totalY + 4);
-
-      // Title
-      ctx.fillStyle = "#8B5CF6";
-      ctx.font = "bold 12px system-ui, sans-serif";
-      ctx.textAlign = "left";
-      ctx.fillText("Shardines - Parallel Shards", 20, 25);
-
-      // Linear scaling indicator
-      ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
-      ctx.font = "10px monospace";
-      ctx.textAlign = "right";
-      ctx.fillText(`${shardsRef.current.length} shards · ~linear scaling`, width - 20, 25);
 
       animationRef.current = requestAnimationFrame(render);
     };
 
-    animationRef.current = requestAnimationFrame(render);
+    // ========== MOBILE LAYOUT ==========
+    const renderMobile = (ctx: CanvasRenderingContext2D, width: number, height: number, timestamp: number) => {
+      const padding = 10;
+      const sectionGap = 8;
 
-    return () => cancelAnimationFrame(animationRef.current);
-  }, [crossShardPct]);
-
-  // Educational animation - dynamic partitioning visualization
-  useEffect(() => {
-    const canvas = eduCanvasRef.current;
-    if (!canvas) return;
-
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    // Initialize educational shards
-    const initEduShards = (width: number, height: number) => {
-      const numShards = 4;
-      const shardHeight = 35;
-      const shardGap = 12;
-      const startY = 50;
-      const shardWidth = width - 40;
-
-      eduShardsRef.current = Array.from({ length: numShards }, (_, i) => ({
-        id: i,
-        x: 20,
-        y: startY + i * (shardHeight + shardGap),
-        width: shardWidth,
-        load: 0.3 + Math.random() * 0.4,
-        color: SHARD_COLORS[i],
-      }));
-    };
-
-    let lastTime = 0;
-    let frameCount = 0;
-    const targetFPS = 30;
-    const frameInterval = 1000 / targetFPS;
-
-    const render = (timestamp: number) => {
-      if (timestamp - lastTime < frameInterval) {
-        eduAnimationRef.current = requestAnimationFrame(render);
-        return;
-      }
-      lastTime = timestamp;
-      frameCount++;
-
-      const dpr = window.devicePixelRatio || 1;
-      const rect = canvas.getBoundingClientRect();
-
-      if (canvas.width !== Math.floor(rect.width * dpr)) {
-        canvas.width = Math.floor(rect.width * dpr);
-        canvas.height = Math.floor(rect.height * dpr);
-        ctx.scale(dpr, dpr);
-        initEduShards(rect.width, rect.height);
-      }
-
-      const width = rect.width;
-      const height = rect.height;
-
-      // Clear
-      ctx.fillStyle = "#0a0a0b";
-      ctx.fillRect(0, 0, width, height);
-
-      // Spawn new transactions
-      if (frameCount % 20 === 0 && eduTransactionsRef.current.length < 15) {
-        const targetShard = Math.floor(Math.random() * eduShardsRef.current.length);
-        const isCrossShard = Math.random() < 0.1; // 10% cross-shard
-
-        eduTransactionsRef.current.push({
-          id: eduTxIdRef.current++,
-          x: 0,
-          y: 25,
-          targetShard,
-          progress: 0,
-          isCrossShard,
-          color: isCrossShard ? "#EC4899" : SHARD_COLORS[targetShard],
-        });
-      }
-
-      // Draw partitioner zone
-      ctx.fillStyle = "rgba(139, 92, 246, 0.1)";
-      ctx.fillRect(0, 0, width, 40);
+      // Title
       ctx.fillStyle = "#8B5CF6";
-      ctx.font = "bold 9px monospace";
-      ctx.textAlign = "center";
-      ctx.fillText("DYNAMIC PARTITIONER", width / 2, 15);
-      ctx.fillStyle = "rgba(255, 255, 255, 0.4)";
+      ctx.font = "bold 11px system-ui";
+      ctx.textAlign = "left";
+      ctx.fillText("SHARDINES", padding, 18);
+
+      ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
       ctx.font = "8px monospace";
-      ctx.fillText("Minimizes cross-shard transactions", width / 2, 28);
+      ctx.textAlign = "right";
+      ctx.fillText(`${stats.crossShardPct.toFixed(1)}% cross-shard`, width - padding, 18);
 
-      // Draw shards
-      eduShardsRef.current.forEach((shard, i) => {
-        // Shard background
-        ctx.fillStyle = "rgba(255, 255, 255, 0.05)";
+      // Layout: Vertical stack
+      // [Resources + Partitioner] row (small)
+      // [Shards 2x2 grid] (main area)
+      // [Merge zone] (small)
+      // [Phase bar] (bottom)
+
+      const topRowY = 30;
+      const topRowHeight = 80;
+      const shardAreaY = topRowY + topRowHeight + sectionGap;
+      const shardAreaHeight = height - shardAreaY - 50;
+      const phaseBarY = height - 38;
+
+      // === Top Row: Resources + Partitioner ===
+      const resourceAreaWidth = width * 0.6 - padding;
+      const partitionerWidth = width * 0.4 - padding;
+
+      // Resources section
+      ctx.fillStyle = currentPhase === 0 ? "rgba(139, 92, 246, 0.1)" : "rgba(255, 255, 255, 0.03)";
+      ctx.beginPath();
+      ctx.roundRect(padding, topRowY, resourceAreaWidth, topRowHeight, 6);
+      ctx.fill();
+      ctx.strokeStyle = currentPhase === 0 ? "#8B5CF680" : "rgba(255, 255, 255, 0.1)";
+      ctx.lineWidth = 1;
+      ctx.stroke();
+
+      ctx.fillStyle = currentPhase === 0 ? "#8B5CF6" : "rgba(255, 255, 255, 0.4)";
+      ctx.font = "bold 8px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("RESOURCES", padding + resourceAreaWidth / 2, topRowY + 12);
+
+      // Draw resources in a row
+      const numResources = resourcesRef.current.length;
+      const resCenterY = topRowY + topRowHeight / 2 + 8;
+      resourcesRef.current.forEach((res, i) => {
+        const resX = padding + 15 + (i * (resourceAreaWidth - 30) / (numResources - 1 || 1));
+        res.x = resX;
+        res.y = resCenterY;
+
+        const nodeSize = 12 + res.accessCount;
         ctx.beginPath();
-        ctx.roundRect(shard.x, shard.y, shard.width, 35, 4);
-        ctx.fill();
-
-        // Load bar
-        shard.load += (Math.random() - 0.5) * 0.02;
-        shard.load = Math.max(0.2, Math.min(0.9, shard.load));
-
-        ctx.fillStyle = shard.color + "40";
-        ctx.beginPath();
-        ctx.roundRect(shard.x, shard.y, shard.width * shard.load, 35, 4);
-        ctx.fill();
-
-        // Shard label
-        ctx.fillStyle = shard.color;
-        ctx.font = "bold 10px monospace";
-        ctx.textAlign = "left";
-        ctx.fillText(`SHARD ${i}`, shard.x + 8, shard.y + 22);
-
-        // Load percentage
-        ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
-        ctx.font = "9px monospace";
-        ctx.textAlign = "right";
-        ctx.fillText(`${Math.round(shard.load * 100)}%`, shard.x + shard.width - 8, shard.y + 22);
-      });
-
-      // Update and draw transactions
-      eduTransactionsRef.current = eduTransactionsRef.current.filter(tx => {
-        tx.progress += 0.02;
-
-        const targetShard = eduShardsRef.current[tx.targetShard];
-        if (!targetShard) return false;
-
-        // Calculate position along path
-        const partitionerY = 35;
-        const shardY = targetShard.y + 17;
-
-        let x: number, y: number;
-
-        if (tx.progress < 0.3) {
-          // Moving to partitioner
-          x = 20 + tx.progress * 3 * (width / 2 - 20);
-          y = partitionerY;
-        } else if (tx.progress < 0.5) {
-          // In partitioner
-          x = width / 2;
-          y = partitionerY;
-        } else if (tx.progress < 0.8) {
-          // Moving to shard
-          const shardProgress = (tx.progress - 0.5) / 0.3;
-          x = width / 2 + shardProgress * (targetShard.x + 50 - width / 2);
-          y = partitionerY + shardProgress * (shardY - partitionerY);
-        } else {
-          // In shard, moving right
-          const inShardProgress = (tx.progress - 0.8) / 0.2;
-          x = targetShard.x + 50 + inShardProgress * (targetShard.width - 80);
-          y = shardY;
-        }
-
-        if (tx.progress >= 1) return false;
-
-        // Draw transaction
-        ctx.beginPath();
-        const gradient = ctx.createRadialGradient(x, y, 0, x, y, 8);
-        gradient.addColorStop(0, tx.color);
-        gradient.addColorStop(0.5, tx.color + "80");
-        gradient.addColorStop(1, "transparent");
-        ctx.fillStyle = gradient;
-        ctx.arc(x, y, 8, 0, Math.PI * 2);
+        ctx.fillStyle = res.color + "40";
+        ctx.arc(res.x, res.y, nodeSize, 0, Math.PI * 2);
         ctx.fill();
 
         ctx.beginPath();
+        ctx.fillStyle = res.color;
+        ctx.arc(res.x, res.y, nodeSize - 4, 0, Math.PI * 2);
+        ctx.fill();
+
         ctx.fillStyle = "#fff";
-        ctx.arc(x, y, 3, 0, Math.PI * 2);
-        ctx.fill();
+        ctx.font = "bold 6px monospace";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(res.name, res.x, res.y);
 
-        // Cross-shard indicator
-        if (tx.isCrossShard && tx.progress > 0.5 && tx.progress < 0.8) {
-          ctx.fillStyle = "#EC4899";
-          ctx.font = "bold 7px monospace";
-          ctx.textAlign = "center";
-          ctx.fillText("X", x, y - 10);
-        }
-
-        return true;
+        res.accessCount = Math.max(0, res.accessCount - 0.03);
       });
 
-      // Draw cross-shard connections when they occur
-      const crossShardTxs = eduTransactionsRef.current.filter(tx => tx.isCrossShard && tx.progress > 0.6);
-      crossShardTxs.forEach(tx => {
-        const sourceShard = eduShardsRef.current[tx.targetShard];
-        const destShard = eduShardsRef.current[(tx.targetShard + 1) % eduShardsRef.current.length];
-        if (sourceShard && destShard) {
-          ctx.strokeStyle = "#EC489940";
-          ctx.lineWidth = 2;
-          ctx.setLineDash([4, 4]);
+      // Partitioner section
+      const partX = padding + resourceAreaWidth + sectionGap;
+      ctx.fillStyle = currentPhase <= 1 ? "rgba(0, 217, 165, 0.1)" : "rgba(255, 255, 255, 0.03)";
+      ctx.beginPath();
+      ctx.roundRect(partX, topRowY, partitionerWidth - sectionGap, topRowHeight, 6);
+      ctx.fill();
+      ctx.strokeStyle = currentPhase <= 1 ? "#00D9A580" : "rgba(255, 255, 255, 0.1)";
+      ctx.stroke();
+
+      ctx.fillStyle = currentPhase <= 1 ? "#00D9A5" : "rgba(255, 255, 255, 0.4)";
+      ctx.font = "bold 8px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("PARTITIONER", partX + (partitionerWidth - sectionGap) / 2, topRowY + 12);
+
+      // Mini partitioner visualization
+      if (currentPhase <= 1) {
+        const pCenterX = partX + (partitionerWidth - sectionGap) / 2;
+        const pCenterY = resCenterY;
+        for (let i = 0; i < 3; i++) {
           ctx.beginPath();
-          ctx.moveTo(sourceShard.x + sourceShard.width - 20, sourceShard.y + 17);
-          ctx.lineTo(destShard.x + destShard.width - 20, destShard.y + 17);
+          ctx.fillStyle = SHARD_COLORS[i] + "60";
+          ctx.arc(pCenterX - 12 + i * 12, pCenterY, 5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        if (currentPhase === 1) {
+          ctx.strokeStyle = "#00D9A5";
+          ctx.lineWidth = 2;
+          ctx.setLineDash([2, 2]);
+          ctx.beginPath();
+          ctx.moveTo(pCenterX - 18, pCenterY + Math.sin(timestamp / 200) * 8);
+          ctx.lineTo(pCenterX + 18, pCenterY + Math.sin(timestamp / 200) * 8);
           ctx.stroke();
           ctx.setLineDash([]);
         }
+      }
+
+      // === Shards: 2x2 Grid ===
+      const shardCols = 2;
+      const shardRows = 2;
+      const shardGap = 6;
+      const shardW = (width - padding * 2 - shardGap) / shardCols;
+      const shardH = (shardAreaHeight - shardGap) / shardRows;
+
+      shardsRef.current.forEach((shard, idx) => {
+        const col = idx % shardCols;
+        const row = Math.floor(idx / shardCols);
+        shard.x = padding + col * (shardW + shardGap);
+        shard.y = shardAreaY + row * (shardH + shardGap);
+        shard.width = shardW;
+        shard.height = shardH;
+
+        const isActive = currentPhase >= 2;
+
+        ctx.fillStyle = isActive ? shard.color + "15" : "rgba(255, 255, 255, 0.03)";
+        ctx.beginPath();
+        ctx.roundRect(shard.x, shard.y, shard.width, shard.height, 6);
+        ctx.fill();
+        ctx.strokeStyle = isActive ? shard.color + "60" : "rgba(255, 255, 255, 0.1)";
+        ctx.lineWidth = isActive ? 2 : 1;
+        ctx.stroke();
+
+        // Label
+        ctx.fillStyle = shard.color;
+        ctx.font = "bold 9px monospace";
+        ctx.textAlign = "left";
+        ctx.fillText(`S${idx}`, shard.x + 6, shard.y + 14);
+
+        // Threads
+        const threadWidth = (shard.width - 30) / shard.threads.length;
+        const threadY = shard.y + 22;
+        const threadH = shard.height - 30;
+
+        shard.threads.forEach((thread, ti) => {
+          const tx = shard.x + 24 + ti * threadWidth;
+          ctx.fillStyle = thread.busy ? shard.color + "30" : "rgba(255, 255, 255, 0.03)";
+          ctx.beginPath();
+          ctx.roundRect(tx, threadY, threadWidth - 3, threadH, 3);
+          ctx.fill();
+
+          if (thread.busy && thread.progress > 0) {
+            ctx.fillStyle = shard.color;
+            const progressH = threadH * Math.min(thread.progress, 1);
+            ctx.fillRect(tx + 2, threadY + threadH - progressH, threadWidth - 7, progressH);
+          }
+
+          if (thread.busy) {
+            thread.progress += 0.04;
+            if (thread.progress >= 1) {
+              thread.busy = false;
+              thread.txId = null;
+              thread.progress = 0;
+            }
+          }
+        });
+
+        // Load indicator
+        shard.load = shard.threads.filter(t => t.busy).length / shard.threads.length;
+        ctx.fillStyle = "rgba(255, 255, 255, 0.1)";
+        ctx.fillRect(shard.x + 6, shard.y + shard.height - 8, 14, 3);
+        ctx.fillStyle = shard.color;
+        ctx.fillRect(shard.x + 6, shard.y + shard.height - 8, 14 * shard.load, 3);
       });
 
-      eduAnimationRef.current = requestAnimationFrame(render);
+      // === Phase Bar ===
+      const phaseWidth = (width - padding * 2 - 6) / 4;
+      PHASES.forEach((phase, i) => {
+        const px = padding + i * (phaseWidth + 2);
+        const isActive = currentPhase === i;
+        const isPast = currentPhase > i;
+
+        ctx.fillStyle = isActive ?
+          (i === 0 ? "#8B5CF6" : i === 1 ? "#00D9A5" : i === 2 ? "#F59E0B" : "#3B82F6") :
+          isPast ? "rgba(255, 255, 255, 0.15)" : "rgba(255, 255, 255, 0.05)";
+        ctx.beginPath();
+        ctx.roundRect(px, phaseBarY, phaseWidth, 24, 4);
+        ctx.fill();
+
+        ctx.fillStyle = isActive ? "#fff" : "rgba(255, 255, 255, 0.4)";
+        ctx.font = isActive ? "bold 8px monospace" : "7px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText(phase.name.slice(0, 5), px + phaseWidth / 2, phaseBarY + 10);
+
+        if (isActive) {
+          const progress = phaseTimerRef.current / 90;
+          ctx.fillStyle = "rgba(255, 255, 255, 0.3)";
+          ctx.fillRect(px + 3, phaseBarY + 17, (phaseWidth - 6) * progress, 3);
+        }
+      });
+
+      // === Draw Transactions ===
+      updateAndDrawTransactions(ctx, width, height, timestamp, true);
     };
 
-    eduAnimationRef.current = requestAnimationFrame(render);
+    // ========== DESKTOP LAYOUT ==========
+    const renderDesktop = (ctx: CanvasRenderingContext2D, width: number, height: number, timestamp: number) => {
+      // Title
+      ctx.fillStyle = "#8B5CF6";
+      ctx.font = "bold 12px system-ui";
+      ctx.textAlign = "left";
+      ctx.fillText("SHARDINES: EXECUTION SHARDING", 20, 25);
 
-    return () => cancelAnimationFrame(eduAnimationRef.current);
-  }, []);
+      ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+      ctx.font = "9px monospace";
+      ctx.textAlign = "right";
+      ctx.fillText(`4 Shards · ${stats.crossShardPct.toFixed(1)}% cross-shard`, width - 20, 25);
+
+      // Layout calculations
+      const resourceAreaX = 20;
+      const resourceAreaWidth = width * 0.22;
+      const partitionerX = resourceAreaX + resourceAreaWidth + 12;
+      const partitionerWidth = 45;
+      const shardAreaX = partitionerX + partitionerWidth + 12;
+      const shardAreaWidth = width * 0.40;
+      const mergeX = shardAreaX + shardAreaWidth + 12;
+      const mergeWidth = width - mergeX - 15;
+
+      const contentTop = 50;
+      const contentHeight = height - 100;
+      const phaseBarY = height - 40;
+
+      // === Resource Graph ===
+      ctx.fillStyle = currentPhase === 0 ? "rgba(139, 92, 246, 0.08)" : "rgba(255, 255, 255, 0.02)";
+      ctx.beginPath();
+      ctx.roundRect(resourceAreaX, contentTop, resourceAreaWidth, contentHeight, 8);
+      ctx.fill();
+      ctx.strokeStyle = currentPhase === 0 ? "#8B5CF680" : "rgba(255, 255, 255, 0.1)";
+      ctx.lineWidth = currentPhase === 0 ? 2 : 1;
+      ctx.stroke();
+
+      ctx.fillStyle = currentPhase === 0 ? "#8B5CF6" : "rgba(255, 255, 255, 0.4)";
+      ctx.font = "bold 9px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("RESOURCE GRAPH", resourceAreaX + resourceAreaWidth / 2, contentTop + 15);
+
+      // Draw resources in circle
+      const resCenterX = resourceAreaX + resourceAreaWidth / 2;
+      const resCenterY = contentTop + contentHeight / 2;
+      const resRadius = Math.min(resourceAreaWidth, contentHeight - 60) * 0.32;
+
+      resourcesRef.current.forEach((res, i) => {
+        const angle = (i / resourcesRef.current.length) * Math.PI * 2 - Math.PI / 2;
+        res.x = resCenterX + Math.cos(angle) * resRadius;
+        res.y = resCenterY + Math.sin(angle) * resRadius;
+
+        const nodeSize = 16 + res.accessCount * 2;
+        ctx.beginPath();
+        ctx.fillStyle = res.color + "30";
+        ctx.arc(res.x, res.y, nodeSize, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.beginPath();
+        ctx.fillStyle = res.color;
+        ctx.arc(res.x, res.y, nodeSize - 5, 0, Math.PI * 2);
+        ctx.fill();
+
+        ctx.fillStyle = "#fff";
+        ctx.font = "bold 7px monospace";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(res.name, res.x, res.y);
+
+        res.accessCount = Math.max(0, res.accessCount - 0.02);
+      });
+
+      // === Partitioner ===
+      ctx.fillStyle = currentPhase <= 1 ? "rgba(0, 217, 165, 0.1)" : "rgba(255, 255, 255, 0.02)";
+      ctx.beginPath();
+      ctx.roundRect(partitionerX, contentTop, partitionerWidth, contentHeight, 8);
+      ctx.fill();
+      ctx.strokeStyle = currentPhase <= 1 ? "#00D9A580" : "rgba(255, 255, 255, 0.1)";
+      ctx.lineWidth = currentPhase <= 1 ? 2 : 1;
+      ctx.stroke();
+
+      ctx.save();
+      ctx.translate(partitionerX + partitionerWidth / 2, contentTop + contentHeight / 2);
+      ctx.rotate(-Math.PI / 2);
+      ctx.fillStyle = currentPhase <= 1 ? "#00D9A5" : "rgba(255, 255, 255, 0.4)";
+      ctx.font = "bold 8px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("PARTITIONER", 0, 0);
+      ctx.restore();
+
+      if (currentPhase <= 1) {
+        const pCenterY = contentTop + contentHeight / 2;
+        for (let i = 0; i < 3; i++) {
+          const py = pCenterY - 20 + i * 20;
+          ctx.beginPath();
+          ctx.fillStyle = SHARD_COLORS[i] + "60";
+          ctx.arc(partitionerX + partitionerWidth / 2, py, 5, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        if (currentPhase === 1) {
+          const cutY = pCenterY + Math.sin(timestamp / 200) * 15;
+          ctx.strokeStyle = "#00D9A5";
+          ctx.lineWidth = 2;
+          ctx.setLineDash([3, 3]);
+          ctx.beginPath();
+          ctx.moveTo(partitionerX + 5, cutY);
+          ctx.lineTo(partitionerX + partitionerWidth - 5, cutY);
+          ctx.stroke();
+          ctx.setLineDash([]);
+        }
+      }
+
+      // === Shards ===
+      const shardHeight = (contentHeight - 24) / 4;
+
+      shardsRef.current.forEach((shard, idx) => {
+        shard.x = shardAreaX;
+        shard.y = contentTop + idx * (shardHeight + 8);
+        shard.width = shardAreaWidth;
+        shard.height = shardHeight;
+
+        const isActive = currentPhase >= 2;
+
+        ctx.fillStyle = isActive ? shard.color + "15" : "rgba(255, 255, 255, 0.03)";
+        ctx.beginPath();
+        ctx.roundRect(shard.x, shard.y, shard.width, shard.height, 6);
+        ctx.fill();
+        ctx.strokeStyle = isActive ? shard.color + "60" : "rgba(255, 255, 255, 0.1)";
+        ctx.lineWidth = isActive ? 2 : 1;
+        ctx.stroke();
+
+        ctx.fillStyle = shard.color;
+        ctx.font = "bold 9px monospace";
+        ctx.textAlign = "left";
+        ctx.fillText(`SHARD ${idx}`, shard.x + 8, shard.y + 14);
+
+        // Threads
+        const threadWidth = (shard.width - 70) / shard.threads.length;
+        const threadY = shard.y + 20;
+        const threadH = shard.height - 28;
+
+        shard.threads.forEach((thread, ti) => {
+          const tx = shard.x + 55 + ti * threadWidth;
+          ctx.fillStyle = thread.busy ? shard.color + "30" : "rgba(255, 255, 255, 0.03)";
+          ctx.beginPath();
+          ctx.roundRect(tx, threadY, threadWidth - 4, threadH, 3);
+          ctx.fill();
+
+          ctx.fillStyle = thread.busy ? "#fff" : "rgba(255, 255, 255, 0.3)";
+          ctx.font = "7px monospace";
+          ctx.textAlign = "center";
+          ctx.fillText(`T${ti}`, tx + (threadWidth - 4) / 2, threadY + 10);
+
+          if (thread.busy && thread.progress > 0) {
+            ctx.fillStyle = shard.color;
+            const progressH = (threadH - 15) * Math.min(thread.progress, 1);
+            ctx.fillRect(tx + 3, threadY + threadH - progressH - 2, threadWidth - 10, progressH);
+          }
+
+          if (thread.busy) {
+            thread.progress += 0.03;
+            if (thread.progress >= 1) {
+              thread.busy = false;
+              thread.txId = null;
+              thread.progress = 0;
+            }
+          }
+        });
+
+        shard.load = shard.threads.filter(t => t.busy).length / shard.threads.length;
+        ctx.fillStyle = "rgba(255, 255, 255, 0.1)";
+        ctx.fillRect(shard.x + 8, shard.y + shard.height - 8, 35, 4);
+        ctx.fillStyle = shard.color;
+        ctx.fillRect(shard.x + 8, shard.y + shard.height - 8, 35 * shard.load, 4);
+      });
+
+      // === Merge Zone ===
+      ctx.fillStyle = currentPhase === 3 ? "rgba(59, 130, 246, 0.1)" : "rgba(255, 255, 255, 0.02)";
+      ctx.beginPath();
+      ctx.roundRect(mergeX, contentTop, mergeWidth, contentHeight, 8);
+      ctx.fill();
+      ctx.strokeStyle = currentPhase === 3 ? "#3B82F680" : "rgba(255, 255, 255, 0.1)";
+      ctx.lineWidth = currentPhase === 3 ? 2 : 1;
+      ctx.stroke();
+
+      ctx.save();
+      ctx.translate(mergeX + mergeWidth / 2, contentTop + contentHeight / 2);
+      ctx.rotate(-Math.PI / 2);
+      ctx.fillStyle = currentPhase === 3 ? "#3B82F6" : "rgba(255, 255, 255, 0.4)";
+      ctx.font = "bold 8px monospace";
+      ctx.textAlign = "center";
+      ctx.fillText("STATE MERGE", 0, 0);
+      ctx.restore();
+
+      if (currentPhase === 3) {
+        const mergedCount = transactionsRef.current.filter(t => t.phase === "done").length;
+        ctx.fillStyle = "#3B82F6";
+        ctx.font = "bold 18px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText(`${mergedCount}`, mergeX + mergeWidth / 2, contentTop + contentHeight / 2 - 5);
+        ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
+        ctx.font = "7px monospace";
+        ctx.fillText("MERGED", mergeX + mergeWidth / 2, contentTop + contentHeight / 2 + 10);
+      }
+
+      // === Phase Bar ===
+      const phaseWidth = (width - 40) / 4;
+      PHASES.forEach((phase, i) => {
+        const px = 20 + i * phaseWidth;
+        const isActive = currentPhase === i;
+        const isPast = currentPhase > i;
+
+        ctx.fillStyle = isActive ?
+          (i === 0 ? "#8B5CF6" : i === 1 ? "#00D9A5" : i === 2 ? "#F59E0B" : "#3B82F6") :
+          isPast ? "rgba(255, 255, 255, 0.2)" : "rgba(255, 255, 255, 0.05)";
+        ctx.beginPath();
+        ctx.roundRect(px, phaseBarY, phaseWidth - 4, 28, 4);
+        ctx.fill();
+
+        ctx.fillStyle = isActive ? "#fff" : "rgba(255, 255, 255, 0.4)";
+        ctx.font = isActive ? "bold 9px monospace" : "8px monospace";
+        ctx.textAlign = "center";
+        ctx.fillText(phase.name, px + phaseWidth / 2 - 2, phaseBarY + 12);
+
+        if (isActive) {
+          const progress = phaseTimerRef.current / 90;
+          ctx.fillStyle = "rgba(255, 255, 255, 0.3)";
+          ctx.fillRect(px + 4, phaseBarY + 20, (phaseWidth - 12) * progress, 4);
+        }
+      });
+
+      // === Draw Transactions ===
+      updateAndDrawTransactions(ctx, width, height, timestamp, false);
+    };
+
+    // ========== TRANSACTION UPDATE/DRAW ==========
+    const updateAndDrawTransactions = (ctx: CanvasRenderingContext2D, width: number, height: number, timestamp: number, mobile: boolean) => {
+      const resCenterX = mobile ? width * 0.3 : 20 + width * 0.11;
+      const resCenterY = mobile ? 70 : height / 2;
+      const partCenterX = mobile ? width * 0.8 : 20 + width * 0.22 + 35;
+      const mergeCenterX = mobile ? width / 2 : width - 40;
+
+      transactionsRef.current.forEach(tx => {
+        // Phase transitions
+        if (currentPhase === 0 && tx.phase === "incoming") {
+          tx.phase = "partitioning";
+          tx.resources.forEach(rid => {
+            if (resourcesRef.current[rid]) {
+              resourcesRef.current[rid].accessCount += 1;
+            }
+          });
+        } else if (currentPhase === 1 && tx.phase === "partitioning") {
+          tx.phase = "assigned";
+        } else if (currentPhase === 2 && tx.phase === "assigned") {
+          tx.phase = "executing";
+          const shard = shardsRef.current[tx.targetShard];
+          const freeThread = shard?.threads.find(t => !t.busy);
+          if (freeThread) {
+            freeThread.busy = true;
+            freeThread.txId = tx.id;
+            freeThread.progress = 0;
+          }
+        } else if (currentPhase === 3 && tx.phase === "executing") {
+          tx.phase = "merging";
+        } else if (tx.phase === "merging") {
+          tx.progress += 0.03;
+          if (tx.progress >= 1) {
+            tx.phase = "done";
+          }
+        }
+
+        // Calculate target position
+        let targetX = tx.x, targetY = tx.y;
+
+        if (tx.phase === "incoming" || tx.phase === "partitioning") {
+          targetX = resCenterX;
+          targetY = resCenterY;
+        } else if (tx.phase === "assigned") {
+          const shard = shardsRef.current[tx.targetShard];
+          targetX = partCenterX;
+          targetY = shard ? shard.y + shard.height / 2 : height / 2;
+        } else if (tx.phase === "executing") {
+          const shard = shardsRef.current[tx.targetShard];
+          if (shard) {
+            targetX = shard.x + shard.width / 2;
+            targetY = shard.y + shard.height / 2;
+          }
+        } else if (tx.phase === "merging" || tx.phase === "done") {
+          targetX = mergeCenterX;
+          targetY = mobile ? height - 80 : height / 2;
+        }
+
+        tx.x += (targetX - tx.x) * 0.08;
+        tx.y += (targetY - tx.y) * 0.08;
+
+        // Draw
+        if (tx.phase !== "done") {
+          const size = mobile ? 4 : (tx.phase === "executing" ? 6 : 5);
+
+          ctx.beginPath();
+          const gradient = ctx.createRadialGradient(tx.x, tx.y, 0, tx.x, tx.y, size * 2);
+          gradient.addColorStop(0, tx.color + "80");
+          gradient.addColorStop(1, "transparent");
+          ctx.fillStyle = gradient;
+          ctx.arc(tx.x, tx.y, size * 2, 0, Math.PI * 2);
+          ctx.fill();
+
+          ctx.beginPath();
+          ctx.fillStyle = tx.isCrossShard ? "#EC4899" : tx.color;
+          ctx.arc(tx.x, tx.y, size, 0, Math.PI * 2);
+          ctx.fill();
+
+          if (tx.isCrossShard && !mobile) {
+            ctx.fillStyle = "#fff";
+            ctx.font = "bold 5px monospace";
+            ctx.textAlign = "center";
+            ctx.fillText("X", tx.x, tx.y + 2);
+          }
+        }
+      });
+
+      // Cross-shard connections (desktop only)
+      if (!mobile && currentPhase >= 2) {
+        const crossShardTxs = transactionsRef.current.filter(t => t.isCrossShard && t.phase === "executing");
+        crossShardTxs.forEach(tx => {
+          const sourceShard = shardsRef.current[tx.targetShard];
+          const destShard = shardsRef.current[(tx.targetShard + 1) % shardsRef.current.length];
+          if (sourceShard && destShard) {
+            ctx.strokeStyle = "#EC489940";
+            ctx.lineWidth = 1.5;
+            ctx.setLineDash([3, 3]);
+            ctx.beginPath();
+            ctx.moveTo(sourceShard.x + sourceShard.width - 8, sourceShard.y + sourceShard.height / 2);
+            ctx.quadraticCurveTo(
+              sourceShard.x + sourceShard.width + 15,
+              (sourceShard.y + destShard.y) / 2 + sourceShard.height / 2,
+              destShard.x + destShard.width - 8,
+              destShard.y + destShard.height / 2
+            );
+            ctx.stroke();
+            ctx.setLineDash([]);
+          }
+        });
+      }
+    };
+
+    animationRef.current = requestAnimationFrame(render);
+    return () => cancelAnimationFrame(animationRef.current);
+  }, [currentPhase, isVisible, stats.crossShardPct]);
 
   return (
-    <div className="chrome-card p-4">
-      <div className="flex items-center justify-between mb-3">
+    <div ref={containerRef} className="chrome-card p-3 sm:p-4">
+      <div className="flex items-center justify-between mb-2 sm:mb-3">
         <div>
-          <h3 className="section-title">Shardines Execution</h3>
-          <p className="text-xs" style={{ color: "var(--chrome-600)" }}>
-            Parallel shards with near-linear scaling
+          <h3 className="section-title text-sm sm:text-base">Shardines: Parallel Execution</h3>
+          <p className="text-[10px] sm:text-xs" style={{ color: "var(--chrome-600)" }}>
+            {isMobile ? "Horizontal scaling" : "Hypergraph partitioning for horizontal scalability"}
           </p>
         </div>
-        <div className="flex items-center gap-3 text-xs font-mono">
-          <span style={{ color: "var(--chrome-500)" }}>
-            Cross-shard: <span style={{ color: "#F59E0B" }}>{crossShardPct.toFixed(1)}%</span>
-          </span>
+        <div className="flex items-center gap-2 sm:gap-3 text-[10px] sm:text-xs font-mono">
           <span style={{ color: "#00D9A5", fontWeight: "bold" }}>
-            {Math.round(totalTps / 1000)}k TPS
+            {Math.round(stats.totalTps / 1000)}k TPS
           </span>
         </div>
       </div>
@@ -430,63 +807,61 @@ export function ShardinesView({ tps }: ShardinesViewProps) {
       <canvas
         ref={canvasRef}
         className="w-full rounded"
-        style={{ height: "240px" }}
+        style={{ height: isMobile ? "320px" : "360px" }}
       />
 
-      {/* Educational Panel */}
-      <div className="mt-4 p-4 rounded-lg bg-white/5 border border-white/10">
-        <div className="flex items-start gap-4">
-          {/* Animated Partitioning Diagram */}
-          <div className="flex-shrink-0">
-            <canvas
-              ref={eduCanvasRef}
-              className="rounded"
-              style={{ width: "260px", height: "200px" }}
-            />
-          </div>
-
-          {/* Explanation */}
-          <div className="flex-1 min-w-0">
-            <h4 className="text-sm font-bold mb-2" style={{ color: "#8B5CF6" }}>
-              Sharding Without Breaking State
-            </h4>
-
-            <div className="space-y-2 text-xs" style={{ color: "var(--chrome-400)" }}>
-              <div>
-                <span className="font-semibold" style={{ color: "#EF4444" }}>Traditional Sharding:</span>
-                <ul className="mt-1 ml-4 space-y-0.5 list-disc">
-                  <li>Split state across different chains</li>
-                  <li>Cross-shard communication is complex & slow</li>
-                </ul>
-              </div>
-
-              <div>
-                <span className="font-semibold" style={{ color: "#8B5CF6" }}>Shardines Approach:</span>
-                <ul className="mt-1 ml-4 space-y-0.5 list-disc">
-                  <li>Scale WITHIN a single validator cluster</li>
-                  <li>Dynamic partitioner minimizes cross-shard txs</li>
-                  <li>Hypergraph partitioning reduces communication</li>
-                </ul>
-              </div>
-            </div>
-
-            <div className="mt-3 pt-3 border-t border-white/10 space-y-1">
-              <div className="flex items-center justify-between text-xs">
-                <span style={{ color: "var(--chrome-500)" }}>
-                  <span className="font-semibold" style={{ color: "#00D9A5" }}>Lab results:</span> 1,000,000 TPS
-                </span>
-                <span className="font-mono" style={{ color: "var(--chrome-600)" }}>
-                  30-machine cluster
-                </span>
-              </div>
-              <div className="flex items-center gap-2 text-xs">
-                <span className="w-2 h-2 rounded-full" style={{ backgroundColor: "#EC4899" }} />
-                <span style={{ color: "var(--chrome-500)" }}>Cross-shard txs typically &lt;5%</span>
-              </div>
-            </div>
-          </div>
+      {/* Phase explanation - simplified on mobile */}
+      <div className="mt-3 sm:mt-4 p-2 sm:p-3 rounded-lg bg-white/5 border border-white/10">
+        <div className="flex items-center gap-2 mb-1 sm:mb-2">
+          <span
+            className="px-1.5 sm:px-2 py-0.5 rounded text-[10px] sm:text-xs font-bold"
+            style={{
+              backgroundColor: currentPhase === 0 ? "#8B5CF6" :
+                               currentPhase === 1 ? "#00D9A5" :
+                               currentPhase === 2 ? "#F59E0B" : "#3B82F6",
+              color: "#000"
+            }}
+          >
+            {PHASES[currentPhase].name}
+          </span>
+          <span className="text-xs sm:text-sm font-bold" style={{
+            color: currentPhase === 0 ? "#8B5CF6" :
+                   currentPhase === 1 ? "#00D9A5" :
+                   currentPhase === 2 ? "#F59E0B" : "#3B82F6"
+          }}>
+            {PHASES[currentPhase].title}
+          </span>
         </div>
+
+        <p className="text-[10px] sm:text-xs" style={{ color: "var(--chrome-400)" }}>
+          {PHASES[currentPhase].desc}
+        </p>
+
+        {!isMobile && (
+          <p className="text-xs font-mono mt-1" style={{ color: "var(--chrome-600)" }}>
+            {PHASES[currentPhase].detail}
+          </p>
+        )}
+      </div>
+
+      {/* Key stats - smaller on mobile */}
+      <div className="mt-2 sm:mt-3 grid grid-cols-4 gap-1 sm:gap-2">
+        {[
+          { label: "Shards", value: "4", color: "#8B5CF6" },
+          { label: "Threads", value: isMobile ? "2" : "4", color: "#F59E0B" },
+          { label: "X-shard", value: `<5%`, color: "#EC4899" },
+          { label: "Peak", value: "1M+", color: "#00D9A5" },
+        ].map((stat) => (
+          <div key={stat.label} className="p-1.5 sm:p-2 rounded bg-white/5 text-center">
+            <div className="text-sm sm:text-lg font-bold font-mono" style={{ color: stat.color }}>
+              {stat.value}
+            </div>
+            <div className="text-[8px] sm:text-[9px]" style={{ color: "var(--chrome-600)" }}>
+              {stat.label}
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
-}
+});

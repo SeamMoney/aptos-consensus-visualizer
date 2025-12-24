@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, memo } from "react";
 import { useAptosStream, BlockStats } from "@/hooks/useAptosStream";
+import { useVisibility } from "@/hooks/useVisibility";
 
 interface GridBlock {
   blockHeight: number;
@@ -30,7 +31,7 @@ function getTextColor(txCount: number): string {
   return "rgba(0, 0, 0, 0.7)";
 }
 
-export function BlockStream() {
+export const BlockStream = memo(function BlockStream() {
   const { stats, connected } = useAptosStream();
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -40,6 +41,7 @@ export function BlockStream() {
   const gridIndexRef = useRef<number>(0);
   const mouseRef = useRef({ x: 0, y: 0 });
   const [hoveredBlock, setHoveredBlock] = useState<GridBlock | null>(null);
+  const isVisible = useVisibility(containerRef);
 
   const COLS = 50;
   const ROWS = 8;
@@ -113,6 +115,12 @@ export function BlockStream() {
 
     const draw = (timestamp: number) => {
       if (!canvas || !container) return;
+
+      // Skip rendering when off-screen
+      if (!isVisible) {
+        animationRef.current = requestAnimationFrame(draw);
+        return;
+      }
 
       if (timestamp - lastFrame < frameInterval) {
         animationRef.current = requestAnimationFrame(draw);
@@ -222,11 +230,11 @@ export function BlockStream() {
         container.removeChild(canvasRef.current);
       }
     };
-  }, []);
+  }, [isVisible]);
 
   return (
     <div className="chrome-card p-4 sm:p-5 relative">
-      <div className="flex items-center justify-between mb-3">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-0 mb-3">
         <div className="flex items-center gap-2">
           <h3 className="section-title">Block River</h3>
           <div className={`live-badge ${!connected ? 'opacity-50' : ''}`}>
@@ -234,7 +242,7 @@ export function BlockStream() {
             {connected ? 'Live' : 'Connecting...'}
           </div>
         </div>
-        <div className="flex items-center gap-4 text-sm tabular-nums">
+        <div className="flex items-center gap-3 sm:gap-4 text-xs sm:text-sm tabular-nums">
           <span style={{ color: "var(--chrome-500)" }}>
             TPS <span className="stat-value-accent">{stats.tps.toLocaleString()}</span>
           </span>
@@ -262,8 +270,8 @@ export function BlockStream() {
         </div>
       )}
 
-      <div className="flex items-center justify-between mt-3 text-xs" style={{ color: "var(--chrome-500)" }}>
-        <div className="flex items-center gap-4">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mt-3 gap-2 text-xs" style={{ color: "var(--chrome-500)" }}>
+        <div className="flex flex-wrap items-center gap-2 sm:gap-4">
           <span className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#1a4d3a" }} />
             1-10 tx
@@ -287,4 +295,4 @@ export function BlockStream() {
       </div>
     </div>
   );
-}
+});

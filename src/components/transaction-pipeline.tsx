@@ -1,7 +1,8 @@
 "use client";
 
-import { useRef, useEffect, useMemo, useState } from "react";
+import { useRef, useEffect, useMemo, useState, memo } from "react";
 import { BlockStats, ConsensusStats } from "@/hooks/useAptosStream";
+import { useVisibility } from "@/hooks/useVisibility";
 
 interface TransactionPipelineProps {
   recentBlocks: BlockStats[];
@@ -37,11 +38,12 @@ interface Transaction {
   blockHeight: number;
 }
 
-export function TransactionPipeline({
+export const TransactionPipeline = memo(function TransactionPipeline({
   recentBlocks,
   consensus,
   avgBlockTime,
 }: TransactionPipelineProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const eduCanvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>(0);
@@ -49,6 +51,7 @@ export function TransactionPipeline({
   const transactionsRef = useRef<Transaction[]>([]);
   const txIdRef = useRef(0);
   const lastBlockHeightRef = useRef(0);
+  const isVisible = useVisibility(containerRef);
 
   // Educational animation state
   const pipelineBlocksRef = useRef<PipelineBlock[]>([]);
@@ -106,6 +109,12 @@ export function TransactionPipeline({
     const frameInterval = 1000 / targetFPS;
 
     const render = (timestamp: number) => {
+      // Skip rendering when off-screen
+      if (!isVisible) {
+        animationRef.current = requestAnimationFrame(render);
+        return;
+      }
+
       if (timestamp - lastTime < frameInterval) {
         animationRef.current = requestAnimationFrame(render);
         return;
@@ -129,10 +138,10 @@ export function TransactionPipeline({
       ctx.fillStyle = "#0a0a0b";
       ctx.fillRect(0, 0, width, height);
 
-      // Pipeline layout
+      // Pipeline layout - responsive for mobile
       const pipelineY = height * 0.5;
-      const pipelineStartX = 60;
-      const pipelineEndX = width - 30;
+      const pipelineStartX = Math.max(10, width * 0.08); // Responsive start
+      const pipelineEndX = width - Math.max(10, width * 0.03); // Responsive end
       const pipelineWidth = pipelineEndX - pipelineStartX;
       const stageWidth = pipelineWidth / STAGES.length;
       const pipeHeight = 40;
@@ -180,15 +189,19 @@ export function TransactionPipeline({
         const elapsed = now - tx.startTime;
         if (elapsed < 0) return true; // Not started yet
 
-        // Move transaction
-        tx.x = pipelineStartX + (elapsed / 1000) * tx.speed * 80;
+        // Move transaction - scale speed based on pipeline width for consistent timing
+        const speedScale = pipelineWidth / 400; // Normalize to base width
+        tx.x = pipelineStartX + (elapsed / 1000) * tx.speed * 60 * speedScale;
+
+        // Clamp to pipeline bounds for visual consistency
+        tx.x = Math.min(tx.x, pipelineEndX + 10);
 
         // Determine current stage
         const relativeX = tx.x - pipelineStartX;
         tx.stage = Math.max(0, Math.min(4, Math.floor(relativeX / stageWidth)));
 
         // Remove if past pipeline
-        if (tx.x > pipelineEndX + 30) {
+        if (tx.x > pipelineEndX + 5) {
           return false;
         }
 
@@ -259,7 +272,7 @@ export function TransactionPipeline({
     return () => {
       cancelAnimationFrame(animationRef.current);
     };
-  }, [avgBlockTime, estimatedFinality, currentRound, currentEpoch, latestBlock]);
+  }, [avgBlockTime, estimatedFinality, currentRound, currentEpoch, latestBlock, isVisible]);
 
   // Educational animation - pipelining visualization
   useEffect(() => {
@@ -277,6 +290,12 @@ export function TransactionPipeline({
     const blockColors = ["#00D9A5", "#6FBCF0", "#F59E0B", "#A855F7", "#EC4899"];
 
     const render = (timestamp: number) => {
+      // Skip rendering when off-screen
+      if (!isVisible) {
+        eduAnimationRef.current = requestAnimationFrame(render);
+        return;
+      }
+
       if (timestamp - lastTime < frameInterval) {
         eduAnimationRef.current = requestAnimationFrame(render);
         return;
@@ -300,11 +319,11 @@ export function TransactionPipeline({
       ctx.fillStyle = "#0a0a0b";
       ctx.fillRect(0, 0, width, height);
 
-      const stageHeight = 24;
-      const stageGap = 6;
-      const startY = 35;
-      const stageWidth = width - 80;
-      const stageStartX = 70;
+      const stageHeight = 22;
+      const stageGap = 4;
+      const startY = 30;
+      const stageWidth = width - 85;
+      const stageStartX = 75;
 
       // Spawn new block every ~40 frames
       if (frameCount % 40 === 0 && pipelineBlocksRef.current.length < 8) {
@@ -391,10 +410,10 @@ export function TransactionPipeline({
     eduAnimationRef.current = requestAnimationFrame(render);
 
     return () => cancelAnimationFrame(eduAnimationRef.current);
-  }, []);
+  }, [isVisible]);
 
   return (
-    <div className="chrome-card p-4">
+    <div ref={containerRef} className="chrome-card p-4">
       <div className="flex items-center justify-between mb-3">
         <div>
           <h3 className="section-title">Transaction Pipeline</h3>
@@ -423,19 +442,19 @@ export function TransactionPipeline({
       />
 
       {/* Educational Panel */}
-      <div className="mt-4 p-4 rounded-lg bg-white/5 border border-white/10">
-        <div className="flex items-start gap-4">
+      <div className="mt-4 p-3 sm:p-4 rounded-lg bg-white/5 border border-white/10">
+        <div className="flex flex-col sm:flex-row items-center sm:items-start gap-3 sm:gap-4">
           {/* Animated Pipelining Diagram */}
-          <div className="flex-shrink-0">
+          <div className="w-full sm:w-auto sm:flex-shrink-0">
             <canvas
               ref={eduCanvasRef}
-              className="rounded"
-              style={{ width: "280px", height: "180px" }}
+              className="rounded w-full sm:w-[300px]"
+              style={{ height: "180px" }}
             />
           </div>
 
           {/* Explanation */}
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0 w-full">
             <h4 className="text-sm font-bold mb-2" style={{ color: "#00D9A5" }}>
               The 4-Hop Journey
             </h4>
@@ -481,4 +500,4 @@ export function TransactionPipeline({
       </div>
     </div>
   );
-}
+});
