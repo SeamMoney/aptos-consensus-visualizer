@@ -2,6 +2,8 @@
 
 import { useRef, useEffect, useState, memo } from "react";
 import { useVisibility } from "@/hooks/useVisibility";
+import { Tooltip, LearnMoreLink } from "@/components/ui/tooltip";
+import { glossary } from "@/data/glossary";
 
 /**
  * Velociraptr vs Archon Consensus Comparison
@@ -203,7 +205,8 @@ export const ArchonConsensus = memo(function ArchonConsensus() {
               2026
             </span>
             <h3 className="text-xs sm:text-sm font-bold" style={{ color: "var(--chrome-200)" }}>
-              Archon: Primary-Proxy Consensus
+              <Tooltip eli5={glossary.archon.eli5} technical={glossary.archon.technical} link={glossary.archon.link}>Archon</Tooltip>: Primary-Proxy Consensus
+              <LearnMoreLink href={glossary.archon.link} label="Docs" />
             </h3>
           </div>
           <p className="text-[9px] sm:text-xs" style={{ color: "var(--chrome-600)" }}>

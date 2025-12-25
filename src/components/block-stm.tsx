@@ -441,11 +441,11 @@ export const BlockSTM = memo(function BlockSTM({ tps }: BlockSTMProps) {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-0 mb-3">
         <div>
           <h3 className="section-title">
-            <Tooltip content={glossary["block-stm"].definition} link={glossary["block-stm"].link}>Block-STM</Tooltip> Parallel Execution
-            <LearnMoreLink href={glossary["block-stm"].link} label="Block-STM Documentation" />
+            <Tooltip eli5={glossary["block-stm"].eli5} technical={glossary["block-stm"].technical} link={glossary["block-stm"].link}>Block-STM</Tooltip> Parallel Execution
+            <LearnMoreLink href={glossary["block-stm"].link} label="Docs" />
           </h3>
           <p className="text-xs" style={{ color: "var(--chrome-600)" }}>
-            Software Transactional Memory with <Tooltip content={glossary.mvcc.definition} link={glossary.mvcc.link}>MVCC</Tooltip>
+            Software Transactional Memory with <Tooltip eli5={glossary.mvcc.eli5} technical={glossary.mvcc.technical} link={glossary.mvcc.link}>MVCC</Tooltip>
           </p>
         </div>
         <div className="flex items-center gap-2 sm:gap-3">

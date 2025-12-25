@@ -2,6 +2,8 @@
 
 import { useRef, useEffect, useState, memo } from "react";
 import { useVisibility } from "@/hooks/useVisibility";
+import { Tooltip, LearnMoreLink } from "@/components/ui/tooltip";
+import { glossary } from "@/data/glossary";
 
 /**
  * Zaptos: Parallel Pipelined Architecture
@@ -304,7 +306,10 @@ export const ZaptosPipelining = memo(function ZaptosPipelining() {
     <div ref={containerRef} className="chrome-card p-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
         <div>
-          <h3 className="section-title">Zaptos: Parallel Pipeline</h3>
+          <h3 className="section-title">
+            <Tooltip eli5={glossary.zaptos.eli5} technical={glossary.zaptos.technical} link={glossary.zaptos.link}>Zaptos</Tooltip>: Parallel Pipeline
+            <LearnMoreLink href={glossary.zaptos.link} label="Docs" />
+          </h3>
           <p className="text-xs" style={{ color: "var(--chrome-600)" }}>
             Multiple blocks processed simultaneously at different stages
           </p>

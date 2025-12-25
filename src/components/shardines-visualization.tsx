@@ -2,6 +2,8 @@
 
 import { useRef, useEffect, useState, memo } from "react";
 import { useVisibility } from "@/hooks/useVisibility";
+import { Tooltip, LearnMoreLink } from "@/components/ui/tooltip";
+import { glossary } from "@/data/glossary";
 
 /**
  * Shardines: Dynamic Sharded Execution Engine
@@ -327,7 +329,10 @@ export const ShardinesVisualization = memo(function ShardinesVisualization() {
     <div ref={containerRef} className="chrome-card p-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
         <div>
-          <h3 className="section-title">Shardines: Sharded Execution</h3>
+          <h3 className="section-title">
+            <Tooltip eli5={glossary.shardines.eli5} technical={glossary.shardines.technical} link={glossary.shardines.link}>Shardines</Tooltip>: Sharded Execution
+            <LearnMoreLink href={glossary.shardines.link} label="Docs" />
+          </h3>
           <p className="text-xs" style={{ color: "var(--chrome-600)" }}>
             Dynamic partitioning for horizontal scalability
           </p>

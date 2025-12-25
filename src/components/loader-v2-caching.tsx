@@ -2,6 +2,8 @@
 
 import { useRef, useEffect, useState, memo } from "react";
 import { useVisibility } from "@/hooks/useVisibility";
+import { Tooltip, LearnMoreLink } from "@/components/ui/tooltip";
+import { glossary } from "@/data/glossary";
 
 /**
  * Loader V2: Multi-Level Code Caching - Mobile-optimized

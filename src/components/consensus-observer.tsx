@@ -2,6 +2,8 @@
 
 import { useRef, useEffect, useState, memo } from "react";
 import { useVisibility } from "@/hooks/useVisibility";
+import { Tooltip, LearnMoreLink } from "@/components/ui/tooltip";
+import { glossary } from "@/data/glossary";
 
 /**
  * Consensus Observer (AIP-93)
@@ -353,7 +355,10 @@ export const ConsensusObserver = memo(function ConsensusObserver() {
     <div ref={containerRef} className="chrome-card p-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
         <div>
-          <h3 className="section-title">Consensus Observer</h3>
+          <h3 className="section-title">
+            <Tooltip eli5={glossary["consensus-observer"].eli5} technical={glossary["consensus-observer"].technical} link={glossary["consensus-observer"].link}>Consensus Observer</Tooltip>
+            <LearnMoreLink href={glossary["consensus-observer"].link} label="Docs" />
+          </h3>
           <p className="text-xs" style={{ color: "var(--chrome-600)" }}>
             Parallel fullnode sync for 30-50% lower latency
           </p>

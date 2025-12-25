@@ -331,11 +331,11 @@ export const VelociraptorProposals = memo(function VelociraptorProposals() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
         <div>
           <h3 className="section-title">
-            <Tooltip content={glossary.velociraptr.definition} link={glossary.velociraptr.link}>Velociraptr</Tooltip>: Optimistic Proposals
-            <LearnMoreLink href={glossary.velociraptr.link} label="Velociraptr Blog Post" />
+            <Tooltip eli5={glossary.velociraptr.eli5} technical={glossary.velociraptr.technical} link={glossary.velociraptr.link}>Velociraptr</Tooltip>: Optimistic Proposals
+            <LearnMoreLink href={glossary.velociraptr.link} label="Blog" />
           </h3>
           <p className="text-xs" style={{ color: "var(--chrome-600)" }}>
-            ~40% faster block times via pipelined proposals (AIP-131)
+            ~40% faster block times via <Tooltip eli5={glossary.pipelining.eli5} technical={glossary.pipelining.technical} link={glossary.pipelining.link}>pipelined</Tooltip> proposals (AIP-131)
           </p>
         </div>
         <div className="flex items-center gap-2">

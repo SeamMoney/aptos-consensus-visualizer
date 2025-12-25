@@ -587,15 +587,15 @@ export const QuorumStoreFlow = memo(function QuorumStoreFlow({ tps }: QuorumStor
       <div className="flex items-center justify-between mb-3">
         <div>
           <h3 className="section-title">
-            <Tooltip content={glossary["quorum-store"].definition} link={glossary["quorum-store"].link}>Quorum Store</Tooltip>
-            <LearnMoreLink href={glossary["quorum-store"].link} label="Quorum Store Documentation" />
+            <Tooltip eli5={glossary["quorum-store"].eli5} technical={glossary["quorum-store"].technical} link={glossary["quorum-store"].link}>Quorum Store</Tooltip>
+            <LearnMoreLink href={glossary["quorum-store"].link} label="Docs" />
           </h3>
           <p className="text-xs" style={{ color: "var(--chrome-600)" }}>
             Batch dissemination for data availability (2/3 quorum)
           </p>
         </div>
         <div className="text-xs font-mono" style={{ color: "var(--chrome-500)" }}>
-          <Tooltip content={glossary.narwhal.definition} link={glossary.narwhal.link}>Narwhal</Tooltip>-based batching
+          <Tooltip eli5={glossary.narwhal.eli5} technical={glossary.narwhal.technical} link={glossary.narwhal.link}>Narwhal</Tooltip>-based batching
         </div>
       </div>
 

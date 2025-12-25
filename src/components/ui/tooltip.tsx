@@ -4,14 +4,18 @@ import { useState, useRef, useEffect, ReactNode } from "react";
 
 interface TooltipProps {
   children: ReactNode;
-  content: string;
+  eli5: string;
+  technical?: string;
   link?: string;
   variant?: "underline" | "icon";
 }
 
-export function Tooltip({ children, content, link, variant = "underline" }: TooltipProps) {
+export function Tooltip({ children, eli5, technical, link, variant = "underline" }: TooltipProps) {
   const [isVisible, setIsVisible] = useState(false);
-  const [position, setPosition] = useState<"top" | "bottom">("top");
+  const [position, setPosition] = useState<{ vertical: "top" | "bottom"; horizontal: "left" | "center" | "right" }>({
+    vertical: "top",
+    horizontal: "center",
+  });
   const triggerRef = useRef<HTMLSpanElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -19,7 +23,7 @@ export function Tooltip({ children, content, link, variant = "underline" }: Tool
   const showTooltip = () => {
     timeoutRef.current = setTimeout(() => {
       setIsVisible(true);
-    }, 200); // 200ms delay to prevent accidental triggers
+    }, 150);
   };
 
   const hideTooltip = () => {
@@ -29,18 +33,37 @@ export function Tooltip({ children, content, link, variant = "underline" }: Tool
     setIsVisible(false);
   };
 
-  // Adjust position if tooltip would go off-screen
+  // Adjust position to stay within viewport
   useEffect(() => {
-    if (isVisible && triggerRef.current) {
-      const rect = triggerRef.current.getBoundingClientRect();
-      const spaceAbove = rect.top;
-      const tooltipHeight = 100; // Estimated height
+    if (isVisible && triggerRef.current && tooltipRef.current) {
+      const triggerRect = triggerRef.current.getBoundingClientRect();
+      const tooltipRect = tooltipRef.current.getBoundingClientRect();
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      const padding = 16;
 
-      if (spaceAbove < tooltipHeight) {
-        setPosition("bottom");
-      } else {
-        setPosition("top");
+      // Vertical positioning
+      const spaceAbove = triggerRect.top;
+      const spaceBelow = viewportHeight - triggerRect.bottom;
+      const tooltipHeight = tooltipRect.height;
+
+      let vertical: "top" | "bottom" = "top";
+      if (spaceAbove < tooltipHeight + padding && spaceBelow > spaceAbove) {
+        vertical = "bottom";
       }
+
+      // Horizontal positioning
+      const triggerCenter = triggerRect.left + triggerRect.width / 2;
+      const halfTooltipWidth = tooltipRect.width / 2;
+
+      let horizontal: "left" | "center" | "right" = "center";
+      if (triggerCenter - halfTooltipWidth < padding) {
+        horizontal = "left";
+      } else if (triggerCenter + halfTooltipWidth > viewportWidth - padding) {
+        horizontal = "right";
+      }
+
+      setPosition({ vertical, horizontal });
     }
   }, [isVisible]);
 
@@ -50,7 +73,7 @@ export function Tooltip({ children, content, link, variant = "underline" }: Tool
     setIsVisible(!isVisible);
   };
 
-  // Close tooltip when clicking outside on mobile
+  // Close tooltip when clicking outside
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent | TouchEvent) => {
       if (
@@ -73,6 +96,13 @@ export function Tooltip({ children, content, link, variant = "underline" }: Tool
       document.removeEventListener("touchstart", handleClickOutside);
     };
   }, [isVisible]);
+
+  const getPositionClasses = () => {
+    const classes = ["tooltip-content"];
+    classes.push(`tooltip-${position.vertical}`);
+    classes.push(`tooltip-${position.horizontal}`);
+    return classes.join(" ");
+  };
 
   return (
     <span className="tooltip-wrapper">
@@ -87,17 +117,23 @@ export function Tooltip({ children, content, link, variant = "underline" }: Tool
         aria-describedby={isVisible ? "tooltip-content" : undefined}
       >
         {children}
-        {variant === "icon" && <span className="info-icon">i</span>}
       </span>
 
       {isVisible && (
         <div
           ref={tooltipRef}
           id="tooltip-content"
-          className={`tooltip-content tooltip-${position}`}
+          className={getPositionClasses()}
           role="tooltip"
         >
-          <p>{content}</p>
+          {/* ELI5 explanation - always shown, emphasized */}
+          <p className="tooltip-eli5">{eli5}</p>
+
+          {/* Technical details - shown in smaller text */}
+          {technical && (
+            <p className="tooltip-technical">{technical}</p>
+          )}
+
           {link && (
             <a
               href={link}
@@ -106,7 +142,7 @@ export function Tooltip({ children, content, link, variant = "underline" }: Tool
               className="tooltip-link"
               onClick={(e) => e.stopPropagation()}
             >
-              Learn more
+              📚 Read the docs →
             </a>
           )}
         </div>
@@ -115,15 +151,19 @@ export function Tooltip({ children, content, link, variant = "underline" }: Tool
   );
 }
 
-// Simple info icon component for section headers
+// Info icon component for standalone explanations
 interface InfoIconProps {
-  content: string;
+  eli5: string;
+  technical?: string;
   link?: string;
 }
 
-export function InfoIcon({ content, link }: InfoIconProps) {
+export function InfoIcon({ eli5, technical, link }: InfoIconProps) {
   const [isVisible, setIsVisible] = useState(false);
-  const [position, setPosition] = useState<"top" | "bottom">("top");
+  const [position, setPosition] = useState<{ vertical: "top" | "bottom"; horizontal: "left" | "center" | "right" }>({
+    vertical: "top",
+    horizontal: "center",
+  });
   const triggerRef = useRef<HTMLButtonElement>(null);
   const tooltipRef = useRef<HTMLDivElement>(null);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -131,7 +171,7 @@ export function InfoIcon({ content, link }: InfoIconProps) {
   const showTooltip = () => {
     timeoutRef.current = setTimeout(() => {
       setIsVisible(true);
-    }, 200);
+    }, 150);
   };
 
   const hideTooltip = () => {
@@ -142,16 +182,33 @@ export function InfoIcon({ content, link }: InfoIconProps) {
   };
 
   useEffect(() => {
-    if (isVisible && triggerRef.current) {
-      const rect = triggerRef.current.getBoundingClientRect();
-      const spaceAbove = rect.top;
-      const tooltipHeight = 100;
+    if (isVisible && triggerRef.current && tooltipRef.current) {
+      const triggerRect = triggerRef.current.getBoundingClientRect();
+      const tooltipRect = tooltipRef.current.getBoundingClientRect();
+      const viewportWidth = window.innerWidth;
+      const viewportHeight = window.innerHeight;
+      const padding = 16;
 
-      if (spaceAbove < tooltipHeight) {
-        setPosition("bottom");
-      } else {
-        setPosition("top");
+      const spaceAbove = triggerRect.top;
+      const spaceBelow = viewportHeight - triggerRect.bottom;
+      const tooltipHeight = tooltipRect.height;
+
+      let vertical: "top" | "bottom" = "top";
+      if (spaceAbove < tooltipHeight + padding && spaceBelow > spaceAbove) {
+        vertical = "bottom";
       }
+
+      const triggerCenter = triggerRect.left + triggerRect.width / 2;
+      const halfTooltipWidth = tooltipRect.width / 2;
+
+      let horizontal: "left" | "center" | "right" = "center";
+      if (triggerCenter - halfTooltipWidth < padding) {
+        horizontal = "left";
+      } else if (triggerCenter + halfTooltipWidth > viewportWidth - padding) {
+        horizontal = "right";
+      }
+
+      setPosition({ vertical, horizontal });
     }
   }, [isVisible]);
 
@@ -177,6 +234,13 @@ export function InfoIcon({ content, link }: InfoIconProps) {
       document.removeEventListener("touchstart", handleClickOutside);
     };
   }, [isVisible]);
+
+  const getPositionClasses = () => {
+    const classes = ["tooltip-content"];
+    classes.push(`tooltip-${position.vertical}`);
+    classes.push(`tooltip-${position.horizontal}`);
+    return classes.join(" ");
+  };
 
   return (
     <span className="info-icon-wrapper">
@@ -200,10 +264,11 @@ export function InfoIcon({ content, link }: InfoIconProps) {
         <div
           ref={tooltipRef}
           id="info-tooltip-content"
-          className={`tooltip-content tooltip-${position}`}
+          className={getPositionClasses()}
           role="tooltip"
         >
-          <p>{content}</p>
+          <p className="tooltip-eli5">{eli5}</p>
+          {technical && <p className="tooltip-technical">{technical}</p>}
           {link && (
             <a
               href={link}
@@ -212,7 +277,7 @@ export function InfoIcon({ content, link }: InfoIconProps) {
               className="tooltip-link"
               onClick={(e) => e.stopPropagation()}
             >
-              Learn more
+              📚 Read the docs →
             </a>
           )}
         </div>
@@ -221,23 +286,23 @@ export function InfoIcon({ content, link }: InfoIconProps) {
   );
 }
 
-// External link component for section headers
+// External link component - MORE VISIBLE with text label
 interface LearnMoreLinkProps {
   href: string;
   label?: string;
 }
 
-export function LearnMoreLink({ href, label = "Documentation" }: LearnMoreLinkProps) {
+export function LearnMoreLink({ href, label = "Docs" }: LearnMoreLinkProps) {
   return (
     <a
       href={href}
       target="_blank"
       rel="noopener noreferrer"
       className="learn-more-link"
-      aria-label={label}
-      title={label}
+      title={`Open ${label}`}
     >
-      <svg width="12" height="12" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <span className="learn-more-text">{label}</span>
+      <svg width="10" height="10" viewBox="0 0 12 12" fill="none" xmlns="http://www.w3.org/2000/svg">
         <path d="M3.5 8.5L8.5 3.5M8.5 3.5H4.5M8.5 3.5V7.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
       </svg>
     </a>

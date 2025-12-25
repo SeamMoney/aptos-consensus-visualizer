@@ -340,11 +340,11 @@ export const RaptrConsensus = memo(function RaptrConsensus({ consensus, avgBlock
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-0 mb-3">
         <div>
           <h3 className="section-title">
-            <Tooltip content={glossary.raptr.definition} link={glossary.raptr.link}>Raptr</Tooltip> Consensus
-            <LearnMoreLink href={glossary.raptr.link} label="Raptr Documentation" />
+            <Tooltip eli5={glossary.raptr.eli5} technical={glossary.raptr.technical} link={glossary.raptr.link}>Raptr</Tooltip> Consensus
+            <LearnMoreLink href={glossary.raptr.link} label="Docs" />
           </h3>
           <p className="text-xs" style={{ color: "var(--chrome-600)" }}>
-            4-hop <Tooltip content={glossary.bft.definition} link={glossary.bft.link}>BFT</Tooltip>: Propose → Vote → Certify → Commit (~{Math.round(avgBlockTime * 4)}ms)
+            4-hop <Tooltip eli5={glossary.bft.eli5} technical={glossary.bft.technical} link={glossary.bft.link}>BFT</Tooltip>: Propose → Vote → Certify → Commit (~{Math.round(avgBlockTime * 4)}ms)
           </p>
         </div>
         <div className="flex items-center gap-2 sm:gap-4">
@@ -413,7 +413,7 @@ export const RaptrConsensus = memo(function RaptrConsensus({ consensus, avgBlock
           Based on HotStuff-2 with optimistic linear communication
         </span>
         <span className="font-mono text-[10px] sm:text-xs">
-          O(n) message complexity · <Tooltip content={glossary["quorum-certificate"].definition} link={glossary["quorum-certificate"].link}>2f+1 quorum</Tooltip>
+          O(n) message complexity · <Tooltip eli5={glossary["quorum-certificate"].eli5} technical={glossary["quorum-certificate"].technical} link={glossary["quorum-certificate"].link}>2f+1 quorum</Tooltip>
         </span>
       </div>
     </div>

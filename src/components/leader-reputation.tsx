@@ -236,8 +236,8 @@ export const LeaderReputation = memo(function LeaderReputation({ consensus }: Le
       <div className="flex items-center justify-between mb-3">
         <div>
           <h3 className="section-title">
-            <Tooltip content={glossary.shoal.definition} link={glossary.shoal.link}>Shoal++</Tooltip> Leader Reputation
-            <LearnMoreLink href={glossary.shoal.link} label="Shoal++ Documentation" />
+            <Tooltip eli5={glossary.shoal.eli5} technical={glossary.shoal.technical} link={glossary.shoal.link}>Shoal++</Tooltip> Leader Reputation
+            <LearnMoreLink href={glossary.shoal.link} label="Docs" />
           </h3>
           <p className="text-xs" style={{ color: "var(--chrome-600)" }}>
             Dynamic leader selection by reputation score

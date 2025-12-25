@@ -437,8 +437,8 @@ export const MoveVMPipeline = memo(function MoveVMPipeline() {
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
         <div>
           <h3 className="section-title">
-            <Tooltip content={glossary["move-vm"].definition} link={glossary["move-vm"].link}>Move VM</Tooltip> Execution Pipeline
-            <LearnMoreLink href={glossary["move-vm"].link} label="Move VM Documentation" />
+            <Tooltip eli5={glossary["move-vm"].eli5} technical={glossary["move-vm"].technical} link={glossary["move-vm"].link}>Move VM</Tooltip> Execution Pipeline
+            <LearnMoreLink href={glossary["move-vm"].link} label="Docs" />
           </h3>
           <p className="text-xs" style={{ color: "var(--chrome-600)" }}>
             Complete transaction lifecycle through the Move virtual machine
