@@ -20,7 +20,7 @@ export const metadata: Metadata = {
     description: "Learn how Aptos processes 160,000+ transactions per second with interactive visualizations.",
     images: [
       {
-        url: "https://aptos-consensus-visualizer.vercel.app/og-banner.png",
+        url: "https://aptos-consensus-visualizer.vercel.app/og-banner.svg",
         width: 1200,
         height: 630,
         alt: "Aptos Velociraptr Banner"
@@ -32,7 +32,7 @@ export const metadata: Metadata = {
     title: "Aptos Velociraptr | 160K+ TPS Visualized",
     description: "Learn how Aptos processes 160,000+ transactions per second with interactive visualizations.",
     creator: "@AptosNetwork",
-    images: ["https://aptos-consensus-visualizer.vercel.app/og-banner.png"],
+    images: ["https://aptos-consensus-visualizer.vercel.app/og-banner.svg"],
   },
   robots: {
     index: true,
