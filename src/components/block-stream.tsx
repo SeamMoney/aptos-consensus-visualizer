@@ -159,15 +159,15 @@ export const BlockStream = memo(function BlockStream() {
       ctx.fillStyle = "#141416";
       ctx.fillRect(0, 0, width, height);
 
-      // Calculate perfect square cells
       const gap = 1;
 
-      // Fixed 8 rows, calculate square cell size from height
+      // Fixed 8 rows - this determines our cell height
       const targetRows = 8;
-      const cellSize = height / targetRows; // Perfect square size
+      const cellH = height / targetRows;
 
-      // Calculate columns to fill width with square cells
-      const cols = Math.max(10, Math.round(width / cellSize));
+      // Calculate columns to make cells as square as possible while filling width
+      // Use cellH as the target size, calculate how many columns fit
+      const cols = Math.max(10, Math.ceil(width / cellH));
 
       // Update grid dimensions if changed
       if (cols !== gridDimensions.cols || targetRows !== gridDimensions.rows) {
@@ -177,33 +177,25 @@ export const BlockStream = memo(function BlockStream() {
       const currentCols = gridDimensions.cols;
       const currentRows = gridDimensions.rows;
 
-      // IMPORTANT: Use identical cell size for perfect squares
-      // Stretch slightly to fill width exactly
-      const cellW = width / currentCols;
-      const cellH = height / currentRows;
-      // For perfect squares, use the smaller dimension
-      const squareSize = Math.min(cellW, cellH);
+      // Calculate actual cell dimensions to FILL the entire canvas
+      // Cells will be nearly square (slightly wider to fill width exactly)
+      const actualCellW = width / currentCols;
+      const actualCellH = height / currentRows;
 
-      // Calculate offset to center the grid if needed
-      const gridWidth = currentCols * squareSize;
-      const gridHeight = currentRows * squareSize;
-      const offsetX = (width - gridWidth) / 2;
-      const offsetY = (height - gridHeight) / 2;
-
-      // Find hovered cell (accounting for offset)
-      const hoveredCol = Math.floor((mouseRef.current.x - offsetX) / squareSize);
-      const hoveredRow = Math.floor((mouseRef.current.y - offsetY) / squareSize);
+      // Find hovered cell
+      const hoveredCol = Math.floor(mouseRef.current.x / actualCellW);
+      const hoveredRow = Math.floor(mouseRef.current.y / actualCellH);
       let currentHovered: GridBlock | null = null;
 
-      // Draw blocks as perfect squares
+      // Draw blocks - fill entire canvas
       for (let r = 0; r < currentRows; r++) {
         for (let c = 0; c < currentCols; c++) {
           const block = gridRef.current[r]?.[c];
 
-          const x = offsetX + c * squareSize + gap;
-          const y = offsetY + r * squareSize + gap;
-          const w = squareSize - gap * 2;
-          const h = squareSize - gap * 2;
+          const x = c * actualCellW + gap;
+          const y = r * actualCellH + gap;
+          const w = actualCellW - gap * 2;
+          const h = actualCellH - gap * 2;
 
           if (!block || block.timestamp === 0) {
             ctx.fillStyle = "#1a1a1d";
