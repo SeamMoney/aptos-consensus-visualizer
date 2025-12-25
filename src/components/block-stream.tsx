@@ -41,24 +41,29 @@ export const BlockStream = memo(function BlockStream() {
   const gridIndexRef = useRef<number>(0);
   const mouseRef = useRef({ x: 0, y: 0 });
   const [hoveredBlock, setHoveredBlock] = useState<GridBlock | null>(null);
+  const [gridDimensions, setGridDimensions] = useState({ cols: 50, rows: 8 });
   const isVisible = useVisibility(containerRef);
 
-  const COLS = 50;
-  const ROWS = 8;
-
-  // Initialize grid
+  // Initialize grid with current dimensions
   useEffect(() => {
-    for (let r = 0; r < ROWS; r++) {
-      gridRef.current[r] = [];
-      for (let c = 0; c < COLS; c++) {
-        gridRef.current[r][c] = { blockHeight: 0, timestamp: 0, txCount: 0 };
+    const { cols, rows } = gridDimensions;
+    // Preserve existing data when resizing
+    const newGrid: GridBlock[][] = [];
+    for (let r = 0; r < rows; r++) {
+      newGrid[r] = [];
+      for (let c = 0; c < cols; c++) {
+        // Try to preserve existing block data
+        newGrid[r][c] = gridRef.current[r]?.[c] || { blockHeight: 0, timestamp: 0, txCount: 0 };
       }
     }
-  }, []);
+    gridRef.current = newGrid;
+  }, [gridDimensions]);
 
   // Handle new blocks from stream
   useEffect(() => {
     if (stats.recentBlocks.length === 0) return;
+
+    const { cols, rows } = gridDimensions;
 
     // Find new blocks we haven't processed yet
     const newBlocks = stats.recentBlocks.filter(
@@ -74,18 +79,20 @@ export const BlockStream = memo(function BlockStream() {
     const sortedBlocks = [...newBlocks].sort((a, b) => a.blockHeight - b.blockHeight);
 
     for (const block of sortedBlocks) {
-      const row = gridIndexRef.current % ROWS;
-      const col = Math.floor(gridIndexRef.current / ROWS) % COLS;
+      const row = gridIndexRef.current % rows;
+      const col = Math.floor(gridIndexRef.current / rows) % cols;
 
-      gridRef.current[row][col] = {
-        blockHeight: block.blockHeight,
-        timestamp: Date.now(),
-        txCount: block.txCount,
-      };
+      if (gridRef.current[row]) {
+        gridRef.current[row][col] = {
+          blockHeight: block.blockHeight,
+          timestamp: Date.now(),
+          txCount: block.txCount,
+        };
+      }
 
-      gridIndexRef.current = (gridIndexRef.current + 1) % (ROWS * COLS);
+      gridIndexRef.current = (gridIndexRef.current + 1) % (rows * cols);
     }
-  }, [stats.recentBlocks]);
+  }, [stats.recentBlocks, gridDimensions]);
 
   // Canvas rendering
   useEffect(() => {
@@ -152,38 +159,43 @@ export const BlockStream = memo(function BlockStream() {
       ctx.fillStyle = "#141416";
       ctx.fillRect(0, 0, width, height);
 
-      // Calculate cell size - ensure square cells
-      const rawCellW = width / COLS;
-      const rawCellH = height / ROWS;
-
-      // Use square cells based on the smaller dimension
-      const cellSize = Math.min(rawCellW, rawCellH);
+      // Calculate responsive grid dimensions based on width
+      // Mobile (< 500px): fewer columns, same cell height
+      // Desktop: more columns
+      const isMobile = width < 500;
+      const targetCellSize = isMobile ? 18 : 20; // Target square size
       const gap = 1;
 
-      // Calculate actual grid dimensions with square cells
-      const actualGridWidth = cellSize * COLS;
-      const actualGridHeight = cellSize * ROWS;
+      // Calculate how many cols/rows fit
+      const cols = Math.floor(width / targetCellSize);
+      const rows = Math.floor(height / targetCellSize);
 
-      // Center the grid if there's extra space
-      const offsetX = (width - actualGridWidth) / 2;
-      const offsetY = (height - actualGridHeight) / 2;
+      // Update grid dimensions if changed
+      if (cols !== gridDimensions.cols || rows !== gridDimensions.rows) {
+        setGridDimensions({ cols: Math.max(10, cols), rows: Math.max(4, rows) });
+      }
 
-      // Find hovered cell (accounting for offset)
-      const adjustedMouseX = mouseRef.current.x - offsetX;
-      const adjustedMouseY = mouseRef.current.y - offsetY;
-      const hoveredCol = Math.floor(adjustedMouseX / cellSize);
-      const hoveredRow = Math.floor(adjustedMouseY / cellSize);
+      const currentCols = gridDimensions.cols;
+      const currentRows = gridDimensions.rows;
+
+      // Calculate actual cell size to fill the space
+      const cellW = width / currentCols;
+      const cellH = height / currentRows;
+
+      // Find hovered cell
+      const hoveredCol = Math.floor(mouseRef.current.x / cellW);
+      const hoveredRow = Math.floor(mouseRef.current.y / cellH);
       let currentHovered: GridBlock | null = null;
 
       // Draw blocks
-      for (let r = 0; r < ROWS; r++) {
-        for (let c = 0; c < COLS; c++) {
+      for (let r = 0; r < currentRows; r++) {
+        for (let c = 0; c < currentCols; c++) {
           const block = gridRef.current[r]?.[c];
 
-          const x = offsetX + c * cellSize + gap;
-          const y = offsetY + r * cellSize + gap;
-          const w = cellSize - gap * 2;
-          const h = cellSize - gap * 2;
+          const x = c * cellW + gap;
+          const y = r * cellH + gap;
+          const w = cellW - gap * 2;
+          const h = cellH - gap * 2;
 
           if (!block || block.timestamp === 0) {
             ctx.fillStyle = "#1a1a1d";
@@ -192,19 +204,18 @@ export const BlockStream = memo(function BlockStream() {
           }
 
           const isHovered = r === hoveredRow && c === hoveredCol &&
-                           hoveredCol >= 0 && hoveredCol < COLS &&
-                           hoveredRow >= 0 && hoveredRow < ROWS;
+                           hoveredCol >= 0 && hoveredCol < currentCols &&
+                           hoveredRow >= 0 && hoveredRow < currentRows;
           if (isHovered) currentHovered = block;
 
           // Block color based on tx count
           ctx.fillStyle = getBlockColor(block.txCount);
           ctx.fillRect(x, y, w, h);
 
-          // Always show tx count inside block if there's any count
+          // Show tx count inside block - adaptive font size
           if (block.txCount > 0) {
             ctx.fillStyle = getTextColor(block.txCount);
-            // Adaptive font size based on cell size, minimum 6px
-            const fontSize = Math.max(6, Math.min(9, w - 4));
+            const fontSize = Math.max(6, Math.min(10, Math.min(w, h) - 4));
             ctx.font = `bold ${fontSize}px monospace`;
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
