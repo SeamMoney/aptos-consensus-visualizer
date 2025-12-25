@@ -256,7 +256,7 @@ export const ConsensusEvolution = memo(function ConsensusEvolution() {
       <canvas
         ref={canvasRef}
         className="w-full rounded"
-        style={{ height: isMobile ? "440px" : "360px" }}
+        style={{ height: isMobile ? "340px" : "320px" }}
       />
 
       {/* Protocol comparison */}
@@ -453,8 +453,8 @@ function drawArchonTimelineSection(
   ctx.fillText(done ? "✓ DONE" : "Processing...", offsetX + width - padding, titleY);
 
   // Timeline visualization
-  const timelineY = offsetY + (mobile ? 50 : 70);
-  const timelineHeight = mobile ? 100 : 130;
+  const timelineY = offsetY + (mobile ? 35 : 55);
+  const timelineHeight = mobile ? 80 : 110;
   const timelineLeft = offsetX + padding + 40;
   const timelineRight = offsetX + width - padding - 10;
   const timelineWidth = timelineRight - timelineLeft;
@@ -484,8 +484,8 @@ function drawArchonTimelineSection(
   });
 
   // === MYSTICETI TIMELINE (for comparison) ===
-  const mystRow = timelineY + 15;
-  const rowHeight = mobile ? 22 : 28;
+  const mystRow = timelineY + 12;
+  const rowHeight = mobile ? 20 : 26;
 
   // Mysticeti label
   ctx.fillStyle = "#6FBCF0";
@@ -525,7 +525,7 @@ function drawArchonTimelineSection(
   ctx.fillText("60ms WAN", timelineLeft + (150 / 180) * timelineWidth, mystRow - 4);
 
   // === ARCHON TIMELINE ===
-  const archRow = mystRow + rowHeight + 20;
+  const archRow = mystRow + rowHeight + 15;
 
   // Archon label
   ctx.fillStyle = "#00D9A5";
@@ -583,7 +583,7 @@ function drawArchonTimelineSection(
   }
 
   // === SPEEDUP VISUALIZATION ===
-  const speedupRow = archRow + rowHeight + 25;
+  const speedupRow = archRow + rowHeight + 18;
 
   // Arrow showing 18× speedup
   if (done) {
