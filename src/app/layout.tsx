@@ -18,12 +18,21 @@ export const metadata: Metadata = {
     siteName: "Aptos Velociraptr",
     title: "Aptos Velociraptr | 160K+ TPS Visualized",
     description: "Learn how Aptos processes 160,000+ transactions per second with interactive visualizations.",
+    images: [
+      {
+        url: "/og-banner.svg",
+        width: 1200,
+        height: 630,
+        alt: "Aptos Velociraptr Banner"
+      }
+    ]
   },
   twitter: {
     card: "summary_large_image",
     title: "Aptos Velociraptr | 160K+ TPS Visualized",
     description: "Learn how Aptos processes 160,000+ transactions per second with interactive visualizations.",
     creator: "@AptosNetwork",
+    images: ["/og-banner.svg"],
   },
   robots: {
     index: true,
