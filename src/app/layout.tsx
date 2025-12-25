@@ -11,7 +11,7 @@ export const metadata: Metadata = {
   authors: [{ name: "SeamMoney" }],
   creator: "SeamMoney",
   publisher: "SeamMoney",
-  metadataBase: new URL("https://velociraptr.com"),
+  metadataBase: new URL("https://aptos-consensus-visualizer.vercel.app"),
   openGraph: {
     type: "website",
     locale: "en_US",
