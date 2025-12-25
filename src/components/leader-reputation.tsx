@@ -3,6 +3,8 @@
 import { useMemo, useRef, useEffect, useState, memo } from "react";
 import { ConsensusStats } from "@/hooks/useAptosStream";
 import { useVisibility } from "@/hooks/useVisibility";
+import { Tooltip, LearnMoreLink } from "@/components/ui/tooltip";
+import { glossary } from "@/data/glossary";
 
 interface LeaderReputationProps {
   consensus: ConsensusStats | null;
@@ -233,7 +235,10 @@ export const LeaderReputation = memo(function LeaderReputation({ consensus }: Le
     <div ref={containerRef} className="chrome-card p-4">
       <div className="flex items-center justify-between mb-3">
         <div>
-          <h3 className="section-title">Shoal++ Leader Reputation</h3>
+          <h3 className="section-title">
+            <Tooltip content={glossary.shoal.definition} link={glossary.shoal.link}>Shoal++</Tooltip> Leader Reputation
+            <LearnMoreLink href={glossary.shoal.link} label="Shoal++ Documentation" />
+          </h3>
           <p className="text-xs" style={{ color: "var(--chrome-600)" }}>
             Dynamic leader selection by reputation score
           </p>

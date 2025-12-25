@@ -2,6 +2,8 @@
 
 import { useRef, useEffect, useState, memo } from "react";
 import { useVisibility } from "@/hooks/useVisibility";
+import { Tooltip, LearnMoreLink } from "@/components/ui/tooltip";
+import { glossary } from "@/data/glossary";
 
 /**
  * Velociraptr Optimistic Proposals Visualization
@@ -328,7 +330,10 @@ export const VelociraptorProposals = memo(function VelociraptorProposals() {
     <div ref={containerRef} className="chrome-card p-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
         <div>
-          <h3 className="section-title">Velociraptr: Optimistic Proposals</h3>
+          <h3 className="section-title">
+            <Tooltip content={glossary.velociraptr.definition} link={glossary.velociraptr.link}>Velociraptr</Tooltip>: Optimistic Proposals
+            <LearnMoreLink href={glossary.velociraptr.link} label="Velociraptr Blog Post" />
+          </h3>
           <p className="text-xs" style={{ color: "var(--chrome-600)" }}>
             ~40% faster block times via pipelined proposals (AIP-131)
           </p>

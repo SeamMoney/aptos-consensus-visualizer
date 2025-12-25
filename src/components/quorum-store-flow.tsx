@@ -2,6 +2,8 @@
 
 import { useRef, useEffect, useState, memo } from "react";
 import { useVisibility } from "@/hooks/useVisibility";
+import { Tooltip, LearnMoreLink } from "@/components/ui/tooltip";
+import { glossary } from "@/data/glossary";
 
 interface QuorumStoreFlowProps {
   tps: number;
@@ -584,13 +586,16 @@ export const QuorumStoreFlow = memo(function QuorumStoreFlow({ tps }: QuorumStor
     <div ref={containerRef} className="chrome-card p-4">
       <div className="flex items-center justify-between mb-3">
         <div>
-          <h3 className="section-title">Quorum Store</h3>
+          <h3 className="section-title">
+            <Tooltip content={glossary["quorum-store"].definition} link={glossary["quorum-store"].link}>Quorum Store</Tooltip>
+            <LearnMoreLink href={glossary["quorum-store"].link} label="Quorum Store Documentation" />
+          </h3>
           <p className="text-xs" style={{ color: "var(--chrome-600)" }}>
             Batch dissemination for data availability (2/3 quorum)
           </p>
         </div>
         <div className="text-xs font-mono" style={{ color: "var(--chrome-500)" }}>
-          Narwhal-based batching
+          <Tooltip content={glossary.narwhal.definition} link={glossary.narwhal.link}>Narwhal</Tooltip>-based batching
         </div>
       </div>
 

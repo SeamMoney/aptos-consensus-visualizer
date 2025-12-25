@@ -2,6 +2,8 @@
 
 import { useRef, useEffect, useState, memo } from "react";
 import { useVisibility } from "@/hooks/useVisibility";
+import { Tooltip, LearnMoreLink } from "@/components/ui/tooltip";
+import { glossary } from "@/data/glossary";
 
 interface BlockSTMProps {
   tps: number;
@@ -438,9 +440,12 @@ export const BlockSTM = memo(function BlockSTM({ tps }: BlockSTMProps) {
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-0 mb-3">
         <div>
-          <h3 className="section-title">Block-STM Parallel Execution</h3>
+          <h3 className="section-title">
+            <Tooltip content={glossary["block-stm"].definition} link={glossary["block-stm"].link}>Block-STM</Tooltip> Parallel Execution
+            <LearnMoreLink href={glossary["block-stm"].link} label="Block-STM Documentation" />
+          </h3>
           <p className="text-xs" style={{ color: "var(--chrome-600)" }}>
-            Software Transactional Memory with MVCC
+            Software Transactional Memory with <Tooltip content={glossary.mvcc.definition} link={glossary.mvcc.link}>MVCC</Tooltip>
           </p>
         </div>
         <div className="flex items-center gap-2 sm:gap-3">

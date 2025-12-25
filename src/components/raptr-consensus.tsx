@@ -3,6 +3,8 @@
 import { useRef, useEffect, useState, memo } from "react";
 import { ConsensusStats } from "@/hooks/useAptosStream";
 import { useVisibility } from "@/hooks/useVisibility";
+import { Tooltip, LearnMoreLink } from "@/components/ui/tooltip";
+import { glossary } from "@/data/glossary";
 
 interface RaptrConsensusProps {
   consensus: ConsensusStats | null;
@@ -337,9 +339,12 @@ export const RaptrConsensus = memo(function RaptrConsensus({ consensus, avgBlock
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 sm:gap-0 mb-3">
         <div>
-          <h3 className="section-title">Raptr Consensus</h3>
+          <h3 className="section-title">
+            <Tooltip content={glossary.raptr.definition} link={glossary.raptr.link}>Raptr</Tooltip> Consensus
+            <LearnMoreLink href={glossary.raptr.link} label="Raptr Documentation" />
+          </h3>
           <p className="text-xs" style={{ color: "var(--chrome-600)" }}>
-            4-hop BFT: Propose → Vote → Certify → Commit (~{Math.round(avgBlockTime * 4)}ms)
+            4-hop <Tooltip content={glossary.bft.definition} link={glossary.bft.link}>BFT</Tooltip>: Propose → Vote → Certify → Commit (~{Math.round(avgBlockTime * 4)}ms)
           </p>
         </div>
         <div className="flex items-center gap-2 sm:gap-4">
@@ -408,7 +413,7 @@ export const RaptrConsensus = memo(function RaptrConsensus({ consensus, avgBlock
           Based on HotStuff-2 with optimistic linear communication
         </span>
         <span className="font-mono text-[10px] sm:text-xs">
-          O(n) message complexity · 2f+1 quorum
+          O(n) message complexity · <Tooltip content={glossary["quorum-certificate"].definition} link={glossary["quorum-certificate"].link}>2f+1 quorum</Tooltip>
         </span>
       </div>
     </div>

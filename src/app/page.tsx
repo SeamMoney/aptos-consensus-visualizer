@@ -23,6 +23,7 @@ import { LoaderV2Caching } from "@/components/loader-v2-caching";
 import { ArchonConsensus } from "@/components/archon-consensus";
 import { ConsensusEvolution } from "@/components/consensus-evolution";
 import { useAptosStream } from "@/hooks/useAptosStream";
+import { LearnMoreLink } from "@/components/ui/tooltip";
 
 export default function Home() {
   const { stats, connected } = useAptosStream();
@@ -76,7 +77,7 @@ export default function Home() {
         </div>
 
         {/* Block Stream - Live block production */}
-        <section className="mb-4">
+        <section id="live-data" className="mb-4 scroll-mt-4">
           <BlockStream />
         </section>
 
@@ -116,11 +117,12 @@ export default function Home() {
         </div>
 
         {/* Consensus Tech Section Header */}
-        <div className="mb-4 pt-6 border-t border-white/5">
+        <div id="consensus" className="mb-4 pt-6 border-t border-white/5 scroll-mt-4">
           <div className="flex items-center gap-2 mb-2">
             <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{ backgroundColor: "#F59E0B", color: "#000" }}>2</span>
             <h2 className="text-sm font-semibold tracking-wide" style={{ color: "var(--chrome-200)" }}>
               CONSENSUS: How Validators Agree
+              <LearnMoreLink href="https://aptos.dev/network/blockchain/blockchain-deep-dive" label="Aptos Consensus Deep Dive" />
             </h2>
           </div>
           <p className="text-xs ml-8" style={{ color: "var(--chrome-500)" }}>
@@ -154,11 +156,12 @@ export default function Home() {
         </div>
 
         {/* Execution Section Header */}
-        <div className="mb-4 pt-6 border-t border-white/5">
+        <div id="execution" className="mb-4 pt-6 border-t border-white/5 scroll-mt-4">
           <div className="flex items-center gap-2 mb-2">
             <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{ backgroundColor: "#10B981", color: "#000" }}>3</span>
             <h2 className="text-sm font-semibold tracking-wide" style={{ color: "var(--chrome-200)" }}>
               EXECUTION: Running Your Smart Contract
+              <LearnMoreLink href="https://aptos.dev/network/blockchain/execution" label="Aptos Execution Deep Dive" />
             </h2>
           </div>
           <p className="text-xs ml-8" style={{ color: "var(--chrome-500)" }}>
@@ -183,6 +186,7 @@ export default function Home() {
             <span className="px-2 py-1 rounded text-[10px] font-bold" style={{ backgroundColor: "#00D9A5", color: "#000" }}>DEEP DIVE</span>
             <h2 className="text-sm font-semibold tracking-wide" style={{ color: "var(--chrome-200)" }}>
               Loader V2: Why 60% Faster?
+              <LearnMoreLink href="https://aptos.dev/network/blockchain/execution" label="Aptos Execution Details" />
             </h2>
           </div>
           <p className="text-xs ml-8" style={{ color: "var(--chrome-500)" }}>
@@ -202,11 +206,12 @@ export default function Home() {
         </section>
 
         {/* Optimizations Section Header */}
-        <div className="mb-4 pt-6 border-t border-white/5">
+        <div id="optimizations" className="mb-4 pt-6 border-t border-white/5 scroll-mt-4">
           <div className="flex items-center gap-2 mb-2">
             <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{ backgroundColor: "#A855F7", color: "#fff" }}>4</span>
             <h2 className="text-sm font-semibold tracking-wide" style={{ color: "var(--chrome-200)" }}>
               OPTIMIZATIONS: Speed Innovations
+              <LearnMoreLink href="https://aptos.dev/network/blockchain/aptos-white-paper" label="Aptos White Paper" />
             </h2>
           </div>
           <p className="text-xs ml-8" style={{ color: "var(--chrome-500)" }}>

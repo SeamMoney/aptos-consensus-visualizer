@@ -2,6 +2,8 @@
 
 import { useRef, useEffect, useState, memo } from "react";
 import { useVisibility } from "@/hooks/useVisibility";
+import { Tooltip, LearnMoreLink } from "@/components/ui/tooltip";
+import { glossary } from "@/data/glossary";
 
 /**
  * Move VM Execution Pipeline - Comprehensive Visualization
@@ -434,7 +436,10 @@ export const MoveVMPipeline = memo(function MoveVMPipeline() {
     <div ref={containerRef} className="chrome-card p-4">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3">
         <div>
-          <h3 className="section-title">Move VM Execution Pipeline</h3>
+          <h3 className="section-title">
+            <Tooltip content={glossary["move-vm"].definition} link={glossary["move-vm"].link}>Move VM</Tooltip> Execution Pipeline
+            <LearnMoreLink href={glossary["move-vm"].link} label="Move VM Documentation" />
+          </h3>
           <p className="text-xs" style={{ color: "var(--chrome-600)" }}>
             Complete transaction lifecycle through the Move virtual machine
           </p>
