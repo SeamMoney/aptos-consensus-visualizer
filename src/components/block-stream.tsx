@@ -169,13 +169,14 @@ export const BlockStream = memo(function BlockStream() {
       // Use cellH as the target size, calculate how many columns fit
       const cols = Math.max(10, Math.ceil(width / cellH));
 
-      // Update grid dimensions if changed
+      // Update grid dimensions if changed (for data storage)
       if (cols !== gridDimensions.cols || targetRows !== gridDimensions.rows) {
         setGridDimensions({ cols, rows: targetRows });
       }
 
-      const currentCols = gridDimensions.cols;
-      const currentRows = gridDimensions.rows;
+      // IMPORTANT: Use calculated values directly, not state (avoids timing issues)
+      const currentCols = cols;
+      const currentRows = targetRows;
 
       // Calculate actual cell dimensions to FILL the entire canvas
       // Cells will be nearly square (slightly wider to fill width exactly)
