@@ -23,9 +23,9 @@ export const metadata: Metadata = {
         url: "https://aptos-consensus-visualizer.vercel.app/og-banner.png",
         width: 1200,
         height: 630,
-        alt: "Aptos Velociraptr Banner"
-      }
-    ]
+        alt: "Aptos Velociraptr Banner",
+      },
+    ],
   },
   twitter: {
     card: "summary_large_image",
