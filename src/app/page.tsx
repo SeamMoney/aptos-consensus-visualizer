@@ -24,6 +24,7 @@ import { ArchonConsensus } from "@/components/archon-consensus";
 import { ConsensusEvolution } from "@/components/consensus-evolution";
 import { useAptosStream } from "@/hooks/useAptosStream";
 import { LearnMoreLink } from "@/components/ui/tooltip";
+import { NetworkSelector } from "@/components/network-selector";
 
 export default function Home() {
   const { stats, connected } = useAptosStream();
@@ -41,40 +42,8 @@ export default function Home() {
               Learn how Aptos processes 160,000+ transactions per second
             </p>
           </div>
-          <div className={`live-badge ${!connected ? 'opacity-50' : ''}`}>
-            <span className="live-dot" />
-            {connected ? 'Mainnet' : 'Connecting...'}
-          </div>
+          <NetworkSelector connected={connected} />
         </header>
-
-        {/* Introduction - What you'll learn */}
-        <div className="mb-4 sm:mb-6 p-2 sm:p-4 rounded-lg bg-gradient-to-r from-emerald-500/10 to-transparent border border-emerald-500/20">
-          <h2 className="text-sm font-bold mb-2" style={{ color: "#00D9A5" }}>
-            How Aptos Works: A Visual Guide
-          </h2>
-          <p className="text-xs mb-3" style={{ color: "var(--chrome-400)" }}>
-            Scroll down to explore the complete journey of a transaction — from your wallet to the blockchain.
-            Each section shows a different piece of the puzzle:
-          </p>
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[10px]">
-            <div className="p-2 rounded bg-white/5">
-              <span className="font-bold" style={{ color: "#3B82F6" }}>1. Live Data</span>
-              <div style={{ color: "var(--chrome-500)" }}>Real blocks & TPS</div>
-            </div>
-            <div className="p-2 rounded bg-white/5">
-              <span className="font-bold" style={{ color: "#F59E0B" }}>2. Consensus</span>
-              <div style={{ color: "var(--chrome-500)" }}>How validators agree</div>
-            </div>
-            <div className="p-2 rounded bg-white/5">
-              <span className="font-bold" style={{ color: "#10B981" }}>3. Execution</span>
-              <div style={{ color: "var(--chrome-500)" }}>Running your code</div>
-            </div>
-            <div className="p-2 rounded bg-white/5">
-              <span className="font-bold" style={{ color: "#A855F7" }}>4. Optimizations</span>
-              <div style={{ color: "var(--chrome-500)" }}>Speed innovations</div>
-            </div>
-          </div>
-        </div>
 
         {/* Block Stream - Live block production */}
         <section id="live-data" className="mb-4 scroll-mt-4">

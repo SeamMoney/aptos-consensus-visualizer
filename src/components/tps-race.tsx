@@ -37,6 +37,14 @@ const CHAINS = [
     description: "Transactions pre-declare account access lists",
     advantage: "Enables parallel scheduling",
   },
+  {
+    name: "Monad",
+    color: "#836EF9",
+    theoreticalTps: 10000,
+    tech: "Optimistic Parallel",
+    description: "EVM-compatible with optimistic parallel execution",
+    advantage: "Full EVM compatibility with parallelism",
+  },
 ];
 
 interface Particle {
@@ -217,7 +225,7 @@ export const TpsRace = memo(function TpsRace() {
       <canvas
         ref={canvasRef}
         className="w-full rounded"
-        style={{ height: "180px" }}
+        style={{ height: "220px" }}
       />
 
       {/* Educational Panel - Chain Comparison */}

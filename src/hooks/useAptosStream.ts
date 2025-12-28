@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useRef, useCallback } from "react";
+import { useNetwork, Network } from "@/contexts/NetworkContext";
 
 export interface BlockStats {
   blockHeight: number;
@@ -53,25 +54,25 @@ export interface AptosStats {
   consensus: ConsensusStats | null;
 }
 
-// Aptos API with Geomi API key
-const APTOS_API = "https://api.mainnet.aptoslabs.com/v1";
-const API_KEY = "AG-PBRRDTVTGPEDATI1NHY3UANNUYSKBPJMA";
-const AUTH_HEADER = { "Authorization": `Bearer ${API_KEY}` };
+// Get headers with API key
+function getHeaders(apiKey: string): HeadersInit {
+  return { "Authorization": `Bearer ${apiKey}` };
+}
 
 // Fetch block with transactions
-async function fetchBlock(height: number) {
+async function fetchBlock(apiUrl: string, height: number, apiKey: string) {
   const res = await fetch(
-    `${APTOS_API}/blocks/by_height/${height}?with_transactions=true`,
-    { headers: AUTH_HEADER, cache: 'no-store' }
+    `${apiUrl}/blocks/by_height/${height}?with_transactions=true`,
+    { headers: getHeaders(apiKey), cache: 'no-store' }
   );
   if (!res.ok) return null;
   return res.json();
 }
 
 // Fetch ledger info
-async function fetchLedgerInfo() {
-  const res = await fetch(APTOS_API, {
-    headers: AUTH_HEADER,
+async function fetchLedgerInfo(apiUrl: string, apiKey: string) {
+  const res = await fetch(apiUrl, {
+    headers: getHeaders(apiKey),
     cache: 'no-store',
   });
   if (!res.ok) return null;
@@ -79,30 +80,10 @@ async function fetchLedgerInfo() {
 }
 
 // Fetch validator set for current epoch
-async function fetchValidatorSet() {
+async function fetchValidatorSet(apiUrl: string, apiKey: string) {
   const res = await fetch(
-    `${APTOS_API}/accounts/0x1/resource/0x1::stake::ValidatorSet`,
-    { headers: AUTH_HEADER, cache: 'no-store' }
-  );
-  if (!res.ok) return null;
-  return res.json();
-}
-
-// Fetch validator performance for an address
-async function fetchValidatorPerformance(validatorAddr: string) {
-  const res = await fetch(
-    `${APTOS_API}/accounts/${validatorAddr}/resource/0x1::stake::ValidatorPerformance`,
-    { headers: AUTH_HEADER, cache: 'no-store' }
-  );
-  if (!res.ok) return null;
-  return res.json();
-}
-
-// Fetch current epoch stake pool info
-async function fetchStakePool() {
-  const res = await fetch(
-    `${APTOS_API}/accounts/0x1/resource/0x1::stake::StakePool`,
-    { headers: AUTH_HEADER, cache: 'no-store' }
+    `${apiUrl}/accounts/0x1/resource/0x1::stake::ValidatorSet`,
+    { headers: getHeaders(apiKey), cache: 'no-store' }
   );
   if (!res.ok) return null;
   return res.json();
@@ -205,6 +186,8 @@ function parseVoteBitvec(bitvec: string, validators: ValidatorInfo[]): { partici
 }
 
 export function useAptosStream() {
+  const { network, apiUrl, apiKey, wsEndpoints } = useNetwork();
+
   const [stats, setStats] = useState<AptosStats>({
     blockHeight: 0,
     tps: 0,
@@ -314,7 +297,7 @@ export function useAptosStream() {
     if (now - lastValidatorFetchRef.current < 30000) return;
 
     try {
-      const validatorSet = await fetchValidatorSet();
+      const validatorSet = await fetchValidatorSet(apiUrl, apiKey);
       if (!validatorSet?.data?.active_validators) return;
 
       const validators: ValidatorInfo[] = validatorSet.data.active_validators.map((v: any) => ({
@@ -331,7 +314,7 @@ export function useAptosStream() {
     } catch (e) {
       console.error('Validator fetch error:', e);
     }
-  }, []);
+  }, [apiUrl, apiKey]);
 
   // Fast polling with API key (primary method - most reliable)
   const startPolling = useCallback(() => {
@@ -347,7 +330,7 @@ export function useAptosStream() {
         // Fetch validators periodically
         fetchValidators();
 
-        const ledger = await fetchLedgerInfo();
+        const ledger = await fetchLedgerInfo(apiUrl, apiKey);
         if (!ledger) {
           throw new Error('Failed to fetch ledger info');
         }
@@ -358,7 +341,7 @@ export function useAptosStream() {
         if (lastBlockRef.current === 0) {
           // Fetch smaller initial batch (10 blocks instead of 30) for faster load
           const heights = Array.from({ length: 10 }, (_, i) => currentHeight - i);
-          const blocks = await Promise.all(heights.map(h => fetchBlock(h)));
+          const blocks = await Promise.all(heights.map(h => fetchBlock(apiUrl, h, apiKey)));
 
           for (let i = 0; i < blocks.length; i++) {
             const block = blocks[i];
@@ -396,7 +379,7 @@ export function useAptosStream() {
         if (currentHeight > lastBlockRef.current) {
           const newCount = Math.min(currentHeight - lastBlockRef.current, 10);
           const heights = Array.from({ length: newCount }, (_, i) => currentHeight - i);
-          const blocks = await Promise.all(heights.map(h => fetchBlock(h)));
+          const blocks = await Promise.all(heights.map(h => fetchBlock(apiUrl, h, apiKey)));
 
           for (let i = 0; i < blocks.length; i++) {
             const block = blocks[i];
@@ -473,16 +456,10 @@ export function useAptosStream() {
     return () => {
       clearInterval(staleCheckInterval);
     };
-  }, [addBlock, fetchValidators]);
+  }, [addBlock, fetchValidators, apiUrl, apiKey]);
 
   // WebSocket connection (experimental - for true real-time)
   const connectWebSocket = useCallback(() => {
-    // Try multiple WebSocket endpoints
-    const wsEndpoints = [
-      'wss://aptos.dorafactory.org/mainnet-ws/',
-      'wss://fullnode.mainnet.aptoslabs.com/v1/stream',
-    ];
-
     const tryConnect = (idx: number) => {
       if (idx >= wsEndpoints.length) {
         console.log('All WebSocket endpoints failed, using polling');
@@ -513,7 +490,7 @@ export function useAptosStream() {
           if (data.params?.result?.block_height) {
             const height = parseInt(data.params.result.block_height);
             // Fetch full block data
-            fetchBlock(height).then(block => {
+            fetchBlock(apiUrl, height, apiKey).then(block => {
               if (block) {
                 const timestamp = parseInt(block.block_timestamp) / 1000;
                 const txCount = block.transactions?.length || 0;
@@ -553,27 +530,56 @@ export function useAptosStream() {
 
     // Start trying WebSocket endpoints
     tryConnect(0);
-  }, [addBlock]);
+  }, [addBlock, apiUrl, wsEndpoints, apiKey]);
 
+  // Main polling effect - restarts whenever network/apiUrl changes
   useEffect(() => {
-    // Start fast polling immediately (most reliable)
-    startPolling();
+    // Reset all refs for fresh start
+    lastBlockRef.current = 0;
+    blocksRef.current = [];
+    validatorsRef.current = [];
+    lastValidatorFetchRef.current = 0;
+    recentProposersRef.current = [];
+    errorCountRef.current = 0;
+    lastSuccessTimeRef.current = Date.now();
+    isPollingRef.current = false;
 
-    // Also try WebSocket for even faster updates
-    connectWebSocket();
+    // Reset stats state
+    setStats({
+      blockHeight: 0,
+      tps: 0,
+      avgBlockTime: 94,
+      recentBlocks: [],
+      consensus: null,
+    });
+    setConnected(false);
+    setError(null);
+
+    // Small delay to ensure clean state before starting
+    const startTimeout = setTimeout(() => {
+      // Start fast polling immediately (most reliable)
+      startPolling();
+
+      // Also try WebSocket for even faster updates
+      connectWebSocket();
+    }, 100);
 
     return () => {
+      clearTimeout(startTimeout);
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
       }
       if (wsRef.current) {
         wsRef.current.close();
+        wsRef.current = null;
       }
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
+      isPollingRef.current = false;
     };
-  }, [startPolling, connectWebSocket]);
+  }, [network, startPolling, connectWebSocket]);
 
-  return { stats, connected, error };
+  return { stats, connected, error, network };
 }
