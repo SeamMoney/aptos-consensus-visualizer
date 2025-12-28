@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState, memo } from "react";
 import { useAptosStream, BlockStats } from "@/hooks/useAptosStream";
 import { useVisibility } from "@/hooks/useVisibility";
+import { useNetwork } from "@/contexts/NetworkContext";
 
 interface GridBlock {
   blockHeight: number;
@@ -33,6 +34,7 @@ function getTextColor(txCount: number): string {
 
 export const BlockStream = memo(function BlockStream() {
   const { stats, connected } = useAptosStream();
+  const { network } = useNetwork();
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const gridRef = useRef<GridBlock[][]>([]);
@@ -43,6 +45,27 @@ export const BlockStream = memo(function BlockStream() {
   const [hoveredBlock, setHoveredBlock] = useState<GridBlock | null>(null);
   const [gridDimensions, setGridDimensions] = useState({ cols: 50, rows: 8 });
   const isVisible = useVisibility(containerRef);
+  const prevNetworkRef = useRef(network);
+
+  // Clear grid when network changes
+  useEffect(() => {
+    if (prevNetworkRef.current !== network) {
+      prevNetworkRef.current = network;
+      const { cols, rows } = gridDimensions;
+      // Reset all refs
+      lastBlockHeightRef.current = 0;
+      gridIndexRef.current = 0;
+      // Clear the grid with empty blocks
+      const emptyGrid: GridBlock[][] = [];
+      for (let r = 0; r < rows; r++) {
+        emptyGrid[r] = [];
+        for (let c = 0; c < cols; c++) {
+          emptyGrid[r][c] = { blockHeight: 0, timestamp: 0, txCount: 0 };
+        }
+      }
+      gridRef.current = emptyGrid;
+    }
+  }, [network, gridDimensions]);
 
   // Initialize grid with current dimensions
   useEffect(() => {
