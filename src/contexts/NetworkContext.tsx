@@ -33,7 +33,7 @@ const NETWORK_CONFIG: Record<Network, { apiUrl: string; apiKey: string; wsEndpoi
 const NetworkContext = createContext<NetworkContextType | undefined>(undefined);
 
 export function NetworkProvider({ children }: { children: ReactNode }) {
-  const [network, setNetworkState] = useState<Network>("mainnet");
+  const [network, setNetworkState] = useState<Network>("testnet");
 
   const setNetwork = useCallback((newNetwork: Network) => {
     setNetworkState(newNetwork);
