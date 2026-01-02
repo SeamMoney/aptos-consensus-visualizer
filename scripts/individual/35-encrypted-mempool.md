@@ -28,13 +28,13 @@
 
 *"Encrypted Mempool changes everything. Your transaction enters the mempool as encrypted ciphertext. Validators can't read it. Bots can't analyze it."*
 
-*"The content is hidden until execution is guaranteed."*
+*"The content stays hidden until the block is ready to execute."*
 
 **[Show batch threshold decryption]**
 
-*"When it's time to execute, validators collectively decrypt the entire batch. Novel batched threshold encryption—one operation reveals everything simultaneously."*
+*"When it's time to execute, validators collectively decrypt the entire batch. Batched threshold decryption lets the group reveal the batch with a single lightweight operation."*
 
-*"6-8 milliseconds to encrypt per transaction. Minimal impact on latency."*
+*"Aptos Labs expects sub‑20ms overhead; the TrX paper reports ~27ms (≈14%) over baseline in their prototype."*
 
 **[Show protection benefits]**
 
@@ -44,7 +44,7 @@
 
 *"Order flow manipulation? Eliminated—strategies stay confidential."*
 
-*"This is the first L1 with native encrypted mempool. Not a sidecar. Not a wrapper. Built into the protocol."*
+*"If approved by governance, Aptos would be among the first L1s to ship this natively — not a sidecar, not a wrapper, but built into the protocol."*
 
 ---
 
@@ -55,10 +55,13 @@
 ---
 
 ## Key Points
-- First L1 with native encrypted mempool
 - Pending governance approval (announced October 2025)
-- 6-8ms encryption per transaction
+- Encrypted ciphertexts hide intent until execution
 - Batched threshold decryption by validators
+- Reported overhead: <20ms expected; ~27ms (≈14%) in prototype
 - Prevents: front-running, sandwich attacks, order flow manipulation
-- Transaction intent hidden until execution guaranteed
-- No latency impact due to validator pipelining
+- Native protocol feature (not an external relayer)
+
+## Sources
+- Aptos Foundation forum announcement (JSON): https://forum.aptosfoundation.org/t/aptos-introduces-built-in-mev-protection-with-encrypted-mempools/17175.json
+- TrX paper (IACR ePrint 2025/2032): https://eprint.iacr.org/2025/2032.pdf

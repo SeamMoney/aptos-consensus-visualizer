@@ -587,9 +587,18 @@ export const BlockSTMExplainer = memo(function BlockSTMExplainer({
       }
     });
     resizeObserver.observe(container);
+
+    // Small delay to ensure DOM is ready
+    const initTimeout = setTimeout(() => {
+      if (!appRef.current && !initAttemptedRef.current) {
+        initPixi();
+      }
+    }, 100);
+
     initPixi();
 
     return () => {
+      clearTimeout(initTimeout);
       resizeObserver.disconnect();
       if (appRef.current) {
         const canvas = appRef.current.canvas as HTMLCanvasElement;
@@ -606,10 +615,12 @@ export const BlockSTMExplainer = memo(function BlockSTMExplainer({
     if (!appRef.current) return;
     if (isVisible && isPlaying) {
       appRef.current.ticker.start();
+      // Force a redraw when becoming visible
+      updateAnimation();
     } else {
       appRef.current.ticker.stop();
     }
-  }, [isVisible, isPlaying]);
+  }, [isVisible, isPlaying, updateAnimation]);
 
   const handlePlayPause = () => {
     const newState = !isPlaying;
