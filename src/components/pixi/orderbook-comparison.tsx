@@ -702,11 +702,26 @@ export const OrderbookComparison = memo(function OrderbookComparison({
       clearTimeout(initTimeout);
       resizeObserver.disconnect();
       if (appRef.current) {
+        // Stop ticker to prevent render during cleanup
+        appRef.current.ticker.stop();
+
         const canvas = appRef.current.canvas as HTMLCanvasElement;
-        appRef.current.destroy(true, { children: true });
+        try {
+          appRef.current.destroy(true, { children: true });
+        } catch {
+          // Ignore cleanup errors during HMR
+        }
         if (canvas && container.contains(canvas)) container.removeChild(canvas);
         appRef.current = null;
       }
+      graphicsRef.current = {
+        background: null,
+        leftPanel: null,
+        rightPanel: null,
+        particles: null,
+        graphs: null,
+      };
+      textsRef.current = [];
       initAttemptedRef.current = false;
       setIsReady(false);
     };

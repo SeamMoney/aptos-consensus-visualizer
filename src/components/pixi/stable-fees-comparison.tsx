@@ -15,9 +15,9 @@ interface StableFeesComparisonProps {
 }
 
 const CONFIG = {
-  duration: 15000,
-  peakTime: 0.35,
-  peakDuration: 0.3,
+  duration: 20000, // Longer cycle for more drama
+  peakTime: 0.20,  // Start spike earlier (at 4s)
+  peakDuration: 0.55, // Much longer spike phase (11s)
   stateUpdateInterval: 80,
   maxParticles: 300,
   auction: {
@@ -110,15 +110,22 @@ export const StableFeesComparison = memo(function StableFeesComparison({
       app.renderer.resize(width, height);
     }
 
-    // Calculate spike intensity with dramatic curve
+    // Calculate spike intensity with sustained peak
     let spikeIntensity = 0;
     if (progress >= CONFIG.peakTime && progress < CONFIG.peakTime + CONFIG.peakDuration) {
       const spikeProgress = (progress - CONFIG.peakTime) / CONFIG.peakDuration;
-      // Sharp spike up, slower decay
-      if (spikeProgress < 0.3) {
-        spikeIntensity = easings.easeOutQuad(spikeProgress / 0.3);
+      // Ramp up (15%), sustain at peak (55%), ramp down (30%)
+      if (spikeProgress < 0.15) {
+        // Quick ramp up
+        spikeIntensity = easings.easeOutQuad(spikeProgress / 0.15);
+      } else if (spikeProgress < 0.70) {
+        // SUSTAINED PEAK - this is the important part people need to see
+        // Add slight oscillation to make it feel alive
+        const oscillation = Math.sin(spikeProgress * Math.PI * 8) * 0.08;
+        spikeIntensity = 0.92 + oscillation;
       } else {
-        spikeIntensity = easings.easeInQuad(1 - (spikeProgress - 0.3) / 0.7);
+        // Slower decay
+        spikeIntensity = easings.easeInQuad(1 - (spikeProgress - 0.70) / 0.30);
       }
     }
 
@@ -677,11 +684,27 @@ export const StableFeesComparison = memo(function StableFeesComparison({
       clearTimeout(initTimeout);
       resizeObserver.disconnect();
       if (appRef.current) {
+        // Stop ticker to prevent render during cleanup
+        appRef.current.ticker.stop();
+
         const canvas = appRef.current.canvas as HTMLCanvasElement;
-        appRef.current.destroy(true, { children: true });
+        try {
+          appRef.current.destroy(true, { children: true });
+        } catch {
+          // Ignore cleanup errors during HMR
+        }
         if (canvas && container.contains(canvas)) container.removeChild(canvas);
         appRef.current = null;
       }
+      graphicsRef.current = {
+        background: null,
+        leftChart: null,
+        rightChart: null,
+        divider: null,
+        particles: null,
+        effects: null,
+      };
+      textsRef.current = [];
       initAttemptedRef.current = false;
       setIsReady(false);
     };
