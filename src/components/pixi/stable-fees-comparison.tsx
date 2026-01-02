@@ -88,9 +88,9 @@ const APTOS = {
   baseFee: 0.0005, // ~$0.0005 governance floor
   feeVariance: 0.0001,
   failureRate: 0,
-  baseLatency: 900, // ~900ms finality
-  feeModel: 'Governance-set minimum + gas market. Block-STM enables massive parallelism.',
-  mechanism: 'Optimistic parallel execution. Fees = gas_used × gas_unit_price. Min price set by governance.',
+  baseLatency: 70, // ~50-100ms with Raptr on mainnet
+  feeModel: 'Governance floor + gas market. Block-STM parallel execution.',
+  mechanism: 'Optimistic parallel execution. Min gas price set by governance.',
 };
 
 // Realistic fee calculation with natural market noise
@@ -652,37 +652,29 @@ export const StableFeesComparison = memo(function StableFeesComparison({
       bg.stroke();
     }
 
-    // Draw demand meter
+    // Draw demand meter - minimal design
     const demandMeter = graphicsRef.current.demandMeter;
     if (demandMeter) {
       demandMeter.clear();
 
-      // Background
-      demandMeter.roundRect(margin, demandMeterY, width - margin * 2, demandMeterHeight, 8);
-      demandMeter.fill({ color: 0x1f2937, alpha: 0.5 });
-      demandMeter.stroke({ width: 1, color: 0x374151 });
+      // Just draw the bar, no outer box
+      const barX = margin + (isMobile ? 120 : 150);
+      const barMaxWidth = width - barX - margin - 8;
+      const barY = demandMeterY + (isMobile ? 12 : 15);
+      const barHeight = isMobile ? 14 : 16;
 
-      // Progress bar background - bar starts after label area
-      const labelAreaWidth = 150; // Reserve space for label
-      const barX = margin + labelAreaWidth;
-      const barWidth = width - margin * 2 - labelAreaWidth - 10;
-      const barY = demandMeterY + 25;
-      const barHeight = 16;
+      // Bar background
+      demandMeter.roundRect(barX, barY, barMaxWidth, barHeight, 4);
+      demandMeter.fill({ color: 0x1a1a1a });
 
-      demandMeter.roundRect(barX, barY, barWidth, barHeight, 4);
-      demandMeter.fill({ color: 0x0d1117 });
-      demandMeter.stroke({ width: 1, color: 0x374151 });
-
-      // Progress fill
-      const fillWidth = (demand / scenario.demand.max) * barWidth;
+      // Progress fill - clamp to not overflow
+      const fillRatio = Math.min(1, demand / scenario.demand.max);
+      const fillWidth = Math.max(0, fillRatio * barMaxWidth);
       const barColor = intensity > 0.7 ? PIXI_COLORS.danger : intensity > 0.4 ? 0xfbbf24 : PIXI_COLORS.primary;
-      demandMeter.roundRect(barX, barY, fillWidth, barHeight, 4);
-      demandMeter.fill({ color: barColor, alpha: 0.8 });
 
-      // Glow effect at high intensity
-      if (intensity > 0.5) {
-        demandMeter.roundRect(barX - 2, barY - 2, fillWidth + 4, barHeight + 4, 6);
-        demandMeter.stroke({ width: 2, color: barColor, alpha: (intensity - 0.5) * 0.6 });
+      if (fillWidth > 0) {
+        demandMeter.roundRect(barX, barY, fillWidth, barHeight, 4);
+        demandMeter.fill({ color: barColor, alpha: 0.85 });
       }
     }
 
@@ -872,51 +864,47 @@ export const StableFeesComparison = memo(function StableFeesComparison({
       rightChart.fill({ color: APTOS.color });
     }
 
-    // Draw capacity comparison at bottom
+    // Draw capacity comparison at bottom - minimal clean design
     const capacity = graphicsRef.current.capacity;
     if (capacity) {
       capacity.clear();
 
-      // Background panel
-      capacity.roundRect(margin, capacityY, width - margin * 2, capacityHeight, 8);
-      capacity.fill({ color: 0x1f2937, alpha: 0.3 });
-      capacity.stroke({ width: 1, color: 0x374151 });
-
-      const barStartX = margin + 20;
-      const barWidth = width - margin * 2 - 40;
-      const barHeight = 18;
+      // No background box - just the bars
+      const barStartX = margin + 8;
+      const barMaxWidth = width - margin * 2 - 16;
+      const barHeight = 16;
 
       // Left chain capacity bar
-      const leftBarY = capacityY + 15;
-      capacity.roundRect(barStartX, leftBarY, barWidth, barHeight, 4);
-      capacity.fill({ color: 0x0d1117 });
-      capacity.stroke({ width: 1, color: 0x374151 });
+      const leftBarY = capacityY + 8;
+      capacity.roundRect(barStartX, leftBarY, barMaxWidth, barHeight, 3);
+      capacity.fill({ color: 0x1a1a1a });
 
-      // Calculate how much of capacity is used - use LOG SCALE for visibility
-      // Log scale: even 0.1% shows as visible bar
+      // Log scale for visibility - clamp fill to not overflow
       const leftCapacityUsed = Math.min(1, demand / chain.capacity);
       const logLeftUsed = leftCapacityUsed > 0
-        ? Math.max(0.02, Math.log10(leftCapacityUsed * 100 + 1) / Math.log10(101)) // Min 2% visible
+        ? Math.max(0.02, Math.log10(leftCapacityUsed * 100 + 1) / Math.log10(101))
         : 0;
-      const leftFillWidth = Math.max(leftCapacityUsed > 0 ? 8 : 0, logLeftUsed * barWidth); // Min 8px if any usage
+      const leftFillWidth = Math.min(barMaxWidth, Math.max(leftCapacityUsed > 0 ? 6 : 0, logLeftUsed * barMaxWidth));
       const leftBarColor = leftCapacityUsed > 1 ? PIXI_COLORS.danger : leftCapacityUsed > 0.8 ? 0xfbbf24 : chain.color;
-      capacity.roundRect(barStartX, leftBarY, leftFillWidth, barHeight, 4);
-      capacity.fill({ color: leftBarColor, alpha: 0.9 });
+      if (leftFillWidth > 0) {
+        capacity.roundRect(barStartX, leftBarY, leftFillWidth, barHeight, 3);
+        capacity.fill({ color: leftBarColor, alpha: 0.9 });
+      }
 
-      // Right (Aptos) capacity bar
-      const rightBarY = capacityY + 42;
-      capacity.roundRect(barStartX, rightBarY, barWidth, barHeight, 4);
-      capacity.fill({ color: 0x0d1117 });
-      capacity.stroke({ width: 1, color: 0x374151 });
+      // Aptos capacity bar
+      const rightBarY = capacityY + 32;
+      capacity.roundRect(barStartX, rightBarY, barMaxWidth, barHeight, 3);
+      capacity.fill({ color: 0x1a1a1a });
 
-      // Aptos - same log scale
       const aptosCapacityUsed = Math.min(1, demand / APTOS.currentCapacity);
       const logAptosUsed = aptosCapacityUsed > 0
         ? Math.max(0.02, Math.log10(aptosCapacityUsed * 100 + 1) / Math.log10(101))
         : 0;
-      const aptosFillWidth = Math.max(aptosCapacityUsed > 0 ? 8 : 0, logAptosUsed * barWidth);
-      capacity.roundRect(barStartX, rightBarY, aptosFillWidth, barHeight, 4);
-      capacity.fill({ color: APTOS.color, alpha: 0.9 });
+      const aptosFillWidth = Math.min(barMaxWidth, Math.max(aptosCapacityUsed > 0 ? 6 : 0, logAptosUsed * barMaxWidth));
+      if (aptosFillWidth > 0) {
+        capacity.roundRect(barStartX, rightBarY, aptosFillWidth, barHeight, 3);
+        capacity.fill({ color: APTOS.color, alpha: 0.9 });
+      }
     }
 
     } catch {
@@ -1158,110 +1146,62 @@ export const StableFeesComparison = memo(function StableFeesComparison({
         </div>
       </div>
 
-      {/* Stats Grid - responsive */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mb-3 sm:mb-4">
-        <div
-          className="p-3 sm:p-4 rounded-lg border relative overflow-hidden"
-          style={{
-            backgroundColor: isOverCapacity ? 'rgba(239, 68, 68, 0.15)' : leftFailedPct > 10 ? 'rgba(239, 68, 68, 0.1)' : `rgba(${parseInt(chain.color.toString(16).padStart(6, '0').slice(0,2), 16)}, ${parseInt(chain.color.toString(16).padStart(6, '0').slice(2,4), 16)}, ${parseInt(chain.color.toString(16).padStart(6, '0').slice(4,6), 16)}, 0.08)`,
-            borderColor: isOverCapacity ? 'rgba(239, 68, 68, 0.6)' : leftFailedPct > 10 ? 'rgba(239, 68, 68, 0.3)' : `#${chain.color.toString(16).padStart(6, '0')}40`,
-          }}
-        >
-          {/* Over capacity warning banner */}
+      {/* Stats - clean inline design */}
+      <div className="grid grid-cols-2 gap-4 sm:gap-6 mb-3">
+        {/* Left chain stats */}
+        <div className="relative">
           {isOverCapacity && (
-            <div
-              className="absolute top-0 left-0 right-0 text-center py-1 text-xs font-bold animate-pulse"
-              style={{ backgroundColor: 'rgba(239, 68, 68, 0.9)', color: 'white' }}
-            >
+            <div className="text-[10px] sm:text-xs font-bold text-red-500 mb-1 animate-pulse">
               ⚠️ {utilizationPct}% OVERLOADED
             </div>
           )}
-          <div className={`flex flex-wrap justify-between items-start gap-1 mb-1 sm:mb-2 ${isOverCapacity ? 'mt-5 sm:mt-6' : ''}`}>
-            <span className="text-xs" style={{ color: isOverCapacity ? '#ef4444' : `#${chain.color.toString(16).padStart(6, '0')}` }}>
-              {chain.name} ({chain.capacity.toLocaleString()} TPS)
+          <div className="flex items-baseline gap-2 flex-wrap">
+            <span className="text-xs" style={{ color: `#${chain.color.toString(16).padStart(6, '0')}` }}>
+              {chain.name}
             </span>
             {leftFailedPct > 0 && (
-              <span
-                className="text-xs px-1.5 sm:px-2 py-0.5 rounded font-bold"
-                style={{
-                  backgroundColor: leftFailedPct > 50 ? 'rgba(239, 68, 68, 0.4)' : 'rgba(239, 68, 68, 0.2)',
-                  color: '#ef4444',
-                  animation: leftFailedPct > 30 ? 'pulse 1s infinite' : 'none'
-                }}
-              >
-                {leftFailedPct}% PRICED OUT
+              <span className="text-[10px] sm:text-xs text-red-400 font-medium">
+                {leftFailedPct}% priced out
               </span>
             )}
           </div>
-          <div className="text-xl sm:text-2xl font-bold mb-1" style={{ color: isOverCapacity || leftFailedPct > 10 ? '#ef4444' : '#ffffff' }}>
+          <div className="text-2xl sm:text-3xl font-bold" style={{ color: isOverCapacity || leftFailedPct > 10 ? '#ef4444' : '#ffffff' }}>
             {formatFee(leftFee)}
           </div>
-          <div className="flex justify-between text-xs" style={{ color: 'var(--chrome-500)' }}>
+          <div className="flex gap-3 text-xs text-gray-500">
             <span>Peak: {formatFee(leftPeakFee)}</span>
-            <span style={{ color: leftLatency.latency > 30 ? '#ef4444' : leftLatency.latency > 10 ? '#fbbf24' : '#9ca3af' }}>
-              ⏱ {leftLatency.latency.toFixed(1)}{leftLatency.unit}
+            <span style={{ color: leftLatency.latency > 30 ? '#ef4444' : leftLatency.latency > 10 ? '#fbbf24' : '#6b7280' }}>
+              {leftLatency.latency.toFixed(1)}{leftLatency.unit}
             </span>
           </div>
         </div>
-        <div
-          className="p-3 sm:p-4 rounded-lg border relative overflow-hidden"
-          style={{
-            backgroundColor: selectedScenario === 'extreme' && aptosFee > 0.002
-              ? 'rgba(251, 191, 36, 0.1)'
-              : 'rgba(0, 217, 165, 0.08)',
-            borderColor: selectedScenario === 'extreme' && aptosFee > 0.002
-              ? 'rgba(251, 191, 36, 0.4)'
-              : 'rgba(0, 217, 165, 0.3)',
-          }}
-        >
-          {/* Contention indicator for stress/extreme scenarios */}
+
+        {/* Aptos stats */}
+        <div className="relative">
           {selectedScenario !== 'normal' && SCENARIOS[selectedScenario].aptosContention > 0 && (
-            <div
-              className="absolute top-0 left-0 right-0 text-center py-0.5 text-xs"
-              style={{
-                backgroundColor: selectedScenario === 'extreme' ? 'rgba(251, 191, 36, 0.3)' : 'rgba(251, 191, 36, 0.2)',
-                color: '#fbbf24',
-              }}
-            >
-              {selectedScenario === 'extreme' ? '⚡ High Contention' : '⚡ Some Contention'}
+            <div className="text-[10px] sm:text-xs text-yellow-500 mb-1">
+              ⚡ {selectedScenario === 'extreme' ? 'High contention' : 'Some contention'}
             </div>
           )}
-          <div className={`flex flex-wrap justify-between items-start gap-1 mb-1 sm:mb-2 ${selectedScenario !== 'normal' ? 'mt-4 sm:mt-5' : ''}`}>
-            <span className="text-xs" style={{ color: 'var(--accent)' }}>
-              Aptos ({APTOS.currentCapacity.toLocaleString()} TPS)
-            </span>
-            <span className="text-xs px-1.5 sm:px-2 py-0.5 rounded" style={{ backgroundColor: 'rgba(0, 217, 165, 0.2)', color: '#00D9A5' }}>
-              0% failed
-            </span>
+          <div className="flex items-baseline gap-2">
+            <span className="text-xs text-[#00D9A5]">Aptos</span>
+            <span className="text-[10px] sm:text-xs text-[#00D9A5]/70">0% failed</span>
           </div>
-          <div className="text-xl sm:text-2xl font-bold mb-1" style={{ color: '#ffffff' }}>
+          <div className="text-2xl sm:text-3xl font-bold text-white">
             {formatFee(aptosFee)}
           </div>
-          <div className="flex justify-between text-xs" style={{ color: 'var(--chrome-500)' }}>
+          <div className="flex gap-3 text-xs text-gray-500">
             <span>Peak: {formatFee(aptosPeakFee)}</span>
-            <span style={{ color: '#00D9A5' }}>
-              ⏱ {aptosLatencyState.latency}{aptosLatencyState.unit}
-            </span>
+            <span className="text-[#00D9A5]">{aptosLatencyState.latency}ms</span>
           </div>
-          {/* Show utilization in extreme mode */}
-          {selectedScenario === 'extreme' && (
-            <div className="mt-2 pt-2 border-t border-white/10 text-xs" style={{ color: 'var(--chrome-400)' }}>
-              Utilization: {((currentDemand / APTOS.currentCapacity) * 100).toFixed(1)}%
-              {currentDemand > APTOS.currentCapacity * 0.8 && (
-                <span className="ml-2" style={{ color: '#fbbf24' }}>
-                  (fee pressure)
-                </span>
-              )}
-            </div>
-          )}
         </div>
       </div>
 
-      {/* Canvas with HTML overlays for text (avoids PixiJS TexturePool bugs) */}
+      {/* Canvas - clean, no border */}
       <div
         ref={containerRef}
-        className="canvas-wrap relative rounded-lg overflow-hidden h-[380px] sm:h-[420px] md:h-[450px]"
-        style={{ backgroundColor: "#0a0a0b", border: "1px solid #333" }}
+        className="canvas-wrap relative rounded overflow-hidden h-[340px] sm:h-[380px] md:h-[420px]"
+        style={{ backgroundColor: "#0a0a0b" }}
       >
         {!isReady && (
           <div className="absolute inset-0 flex items-center justify-center flex-col gap-2">
@@ -1366,140 +1306,78 @@ export const StableFeesComparison = memo(function StableFeesComparison({
               VS
             </div>
 
-            {/* Capacity section - inside bars */}
+            {/* Capacity labels - overlay on bars */}
             <div
-              className="absolute pointer-events-none flex items-center justify-between px-2 sm:px-3 text-[9px] sm:text-[10px] bottom-[38px] sm:bottom-[45px] left-[25px] sm:left-[40px] right-[25px] sm:right-[40px]"
+              className="absolute pointer-events-none flex items-center justify-between px-3 text-[9px] sm:text-[10px] bottom-[32px] sm:bottom-[38px] left-[16px] sm:left-[20px] right-[16px] sm:right-[20px]"
             >
-              <span className="font-bold text-white" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.9)' }}>
-                {chain.name}: {chain.capacity.toLocaleString()} TPS
+              <span className="font-medium text-white/90">
+                {chain.name} {chain.capacity.toLocaleString()} TPS
               </span>
               <span
-                className="font-bold"
-                style={{
-                  color: utilizationPct > 100 ? '#fff' : utilizationPct > 80 ? '#fbbf24' : '#9ca3af',
-                  textShadow: '0 1px 2px rgba(0,0,0,0.9)',
-                }}
+                className="font-medium"
+                style={{ color: utilizationPct > 100 ? '#ef4444' : utilizationPct > 80 ? '#fbbf24' : '#6b7280' }}
               >
-                {utilizationPct > 100
-                  ? `🔥 ${utilizationPct}%`
-                  : utilizationPct > 80
-                  ? `⚠️ ${utilizationPct}%`
-                  : `${utilizationPct}%`}
+                {utilizationPct > 100 ? `${utilizationPct}%` : `${utilizationPct}%`}
               </span>
             </div>
             <div
-              className="absolute pointer-events-none flex items-center justify-between px-2 sm:px-3 text-[9px] sm:text-[10px] bottom-[14px] sm:bottom-[18px] left-[25px] sm:left-[40px] right-[25px] sm:right-[40px]"
+              className="absolute pointer-events-none flex items-center justify-between px-3 text-[9px] sm:text-[10px] bottom-[8px] sm:bottom-[12px] left-[16px] sm:left-[20px] right-[16px] sm:right-[20px]"
             >
-              <span className="font-bold" style={{ color: '#00D9A5', textShadow: '0 1px 2px rgba(0,0,0,0.9)' }}>
-                Aptos: {APTOS.currentCapacity.toLocaleString()} TPS
+              <span className="font-medium text-[#00D9A5]">
+                Aptos {APTOS.currentCapacity.toLocaleString()} TPS
               </span>
-              <span style={{ color: '#00D9A5', textShadow: '0 1px 2px rgba(0,0,0,0.9)' }}>
-                ✓ {Math.max(0.1, (currentDemand / APTOS.currentCapacity) * 100).toFixed(1)}%
+              <span className="text-[#00D9A5]/70">
+                {Math.max(0.1, (currentDemand / APTOS.currentCapacity) * 100).toFixed(1)}%
               </span>
             </div>
           </>
         )}
       </div>
 
-      {/* Detailed Chain Comparison - responsive */}
-      <div className="mt-3 sm:mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
-        {/* Left chain details */}
-        <div
-          className="p-3 rounded-lg"
-          style={{
-            backgroundColor: `rgba(${parseInt(chain.color.toString(16).padStart(6, '0').slice(0,2), 16)}, ${parseInt(chain.color.toString(16).padStart(6, '0').slice(2,4), 16)}, ${parseInt(chain.color.toString(16).padStart(6, '0').slice(4,6), 16)}, 0.08)`,
-            border: `1px solid rgba(${parseInt(chain.color.toString(16).padStart(6, '0').slice(0,2), 16)}, ${parseInt(chain.color.toString(16).padStart(6, '0').slice(2,4), 16)}, ${parseInt(chain.color.toString(16).padStart(6, '0').slice(4,6), 16)}, 0.2)`,
-          }}
-        >
-          <p className="text-xs font-bold mb-2" style={{ color: `#${chain.color.toString(16).padStart(6, '0')}` }}>
-            {chain.name} Fee Model
-          </p>
-          <p className="text-xs mb-2" style={{ color: 'var(--chrome-400)' }}>
-            {chain.feeModel}
-          </p>
-          <p className="text-xs" style={{ color: 'var(--chrome-500)' }}>
-            <strong style={{ color: 'var(--chrome-400)' }}>Mechanism:</strong> {chain.mechanism}
-          </p>
-          <div className="mt-2 pt-2 border-t border-white/10 grid grid-cols-2 gap-2 text-xs">
-            <div>
-              <span style={{ color: 'var(--chrome-500)' }}>Capacity:</span>
-              <span className="ml-1" style={{ color: 'var(--chrome-300)' }}>{chain.capacity.toLocaleString()} TPS</span>
-            </div>
-            <div>
-              <span style={{ color: 'var(--chrome-500)' }}>Base Latency:</span>
-              <span className="ml-1" style={{ color: 'var(--chrome-300)' }}>{chain.baseLatency >= 1000 ? `${chain.baseLatency/1000}s` : `${chain.baseLatency}ms`}</span>
-            </div>
-          </div>
+      {/* Fee Models - clean inline text */}
+      <div className="mt-3 grid grid-cols-2 gap-6 text-xs text-gray-400">
+        <div>
+          <span style={{ color: `#${chain.color.toString(16).padStart(6, '0')}` }} className="font-medium">{chain.name}:</span>{' '}
+          {chain.feeModel}{' '}
+          <span className="text-gray-500">({chain.capacity.toLocaleString()} TPS, {chain.baseLatency >= 1000 ? `${chain.baseLatency/1000}s` : `${chain.baseLatency}ms`})</span>
         </div>
-
-        {/* Aptos details */}
-        <div
-          className="p-3 rounded-lg"
-          style={{
-            backgroundColor: 'rgba(0, 217, 165, 0.08)',
-            border: '1px solid rgba(0, 217, 165, 0.2)',
-          }}
-        >
-          <p className="text-xs font-bold mb-2" style={{ color: '#00D9A5' }}>
-            Aptos Fee Model
-          </p>
-          <p className="text-xs mb-2" style={{ color: 'var(--chrome-400)' }}>
-            {APTOS.feeModel}
-          </p>
-          <p className="text-xs" style={{ color: 'var(--chrome-500)' }}>
-            <strong style={{ color: 'var(--chrome-400)' }}>Mechanism:</strong> {APTOS.mechanism}
-          </p>
-          <div className="mt-2 pt-2 border-t border-white/10 grid grid-cols-2 gap-2 text-xs">
-            <div>
-              <span style={{ color: 'var(--chrome-500)' }}>Capacity:</span>
-              <span className="ml-1" style={{ color: '#00D9A5' }}>{APTOS.currentCapacity.toLocaleString()} TPS</span>
-            </div>
-            <div>
-              <span style={{ color: 'var(--chrome-500)' }}>Base Latency:</span>
-              <span className="ml-1" style={{ color: '#00D9A5' }}>{APTOS.baseLatency}ms</span>
-            </div>
-          </div>
+        <div>
+          <span className="text-[#00D9A5] font-medium">Aptos:</span>{' '}
+          {APTOS.feeModel}{' '}
+          <span className="text-gray-500">({APTOS.currentCapacity.toLocaleString()} TPS, {APTOS.baseLatency}ms)</span>
         </div>
       </div>
 
-      {/* Key Insight */}
-      <div className="mt-3 p-3 rounded-lg" style={{
-        backgroundColor: selectedScenario === 'extreme' ? 'rgba(251, 191, 36, 0.05)' : 'rgba(0, 217, 165, 0.05)',
-        border: `1px solid ${selectedScenario === 'extreme' ? 'rgba(251, 191, 36, 0.2)' : 'rgba(0, 217, 165, 0.1)'}`
-      }}>
-        <p className="text-xs" style={{ color: 'var(--chrome-400)' }}>
-          {selectedScenario === 'extreme' ? (
-            <>
-              <strong style={{ color: '#fbbf24' }}>Extreme Load Insight:</strong>{' '}
-              Even at 150k TPS (94% of capacity) with contentious state access, Aptos fees only rise to ~$0.003-$0.006.
-              Compare this to {chain.name} which would have {chain.capacity < 1000 ? '100% failure rate' : 'massive fee spikes'} at this load.
-              Block-STM's optimistic execution means even contentious transactions complete - they just use slightly more gas from re-execution.
-            </>
-          ) : selectedScenario === 'stress' ? (
-            <>
-              <strong style={{ color: '#fbbf24' }}>Stress Test Insight:</strong>{' '}
-              At 50k TPS (31% capacity), Aptos fees stay at ~$0.0005-$0.001 even with some contention.
-              {chain.name} at 50k TPS demand = {Math.round((50000 / chain.capacity) * 100)}% of capacity = {chain.capacity < 50000 ? 'complete failure' : 'heavy congestion'}.
-            </>
-          ) : (
-            <>
-              <strong style={{ color: '#00D9A5' }}>Key Insight:</strong>{' '}
-              {selectedChain === 'solana' && 'Solana\'s 65k TPS is theoretical - real-world is 4-10k sustained. More importantly, LOCAL FEE MARKETS mean fees spike on hot accounts (DEXs, mints) even at low total TPS. Aptos parallelizes ALL transactions via Block-STM, avoiding hot-spot congestion.'}
-              {selectedChain === 'monad' && 'Monad\'s variance-aware controller limits fee changes to 3.6%/block. Aptos doesn\'t need fee dampening because capacity (160k TPS) always exceeds demand.'}
-              {selectedChain === 'sui' && 'Sui validators vote on gas price each epoch. Aptos governance sets a floor price, but the real difference is Block-STM enabling 160k+ TPS vs theoretical limits.'}
-              {selectedChain === 'ethereum' && 'Ethereum EIP-1559 base fee can double every ~13 seconds when full. At 15 TPS vs Aptos 160,000 TPS, Ethereum is 10,000x more likely to congest.'}
-              {selectedChain === 'polygon' && 'Polygon inherits EIP-1559 but with only 35 TPS practical capacity. Polymarket\'s election night (33.8 TPS) hit the ceiling. Aptos would use 0.02% capacity.'}
-            </>
-          )}
-        </p>
-      </div>
+      {/* Insight - clean inline */}
+      <p className="mt-3 text-xs text-gray-400 leading-relaxed">
+        {selectedScenario === 'extreme' ? (
+          <>
+            <span className="text-yellow-500">Extreme load:</span>{' '}
+            At 150k TPS with contention, Aptos fees rise to ~$0.003-$0.006 while {chain.name} would have {chain.capacity < 1000 ? '100% failure' : 'massive fee spikes'}.
+          </>
+        ) : selectedScenario === 'stress' ? (
+          <>
+            <span className="text-yellow-500">Stress test:</span>{' '}
+            At 50k TPS, Aptos fees stay ~$0.0005-$0.001. {chain.name} at 50k TPS = {Math.round((50000 / chain.capacity) * 100)}% capacity.
+          </>
+        ) : (
+          <>
+            <span className="text-[#00D9A5]">Key insight:</span>{' '}
+            {selectedChain === 'solana' && 'Solana\'s local fee markets spike on hot accounts even at low TPS. Aptos Block-STM parallelizes all transactions.'}
+            {selectedChain === 'monad' && 'Monad limits fee changes to 3.6%/block. Aptos doesn\'t need dampening - 160k TPS always exceeds demand.'}
+            {selectedChain === 'sui' && 'Sui validators vote on gas price per epoch. Aptos Block-STM enables 160k+ real TPS.'}
+            {selectedChain === 'ethereum' && 'Ethereum fees can double every ~13s when full. Aptos is 10,000x less likely to congest.'}
+            {selectedChain === 'polygon' && 'Polygon hit 97% capacity at 33.8 TPS on election night. Aptos would use 0.02%.'}
+          </>
+        )}
+      </p>
 
       {/* Understanding Fee Mechanisms */}
-      <details className="mt-3">
-        <summary className="text-xs font-bold cursor-pointer" style={{ color: 'var(--chrome-400)' }}>
-          Why do fees behave so differently?
+      <details className="mt-2">
+        <summary className="text-xs text-gray-500 cursor-pointer hover:text-gray-300">
+          More details...
         </summary>
-        <div className="mt-2 p-3 rounded-lg text-xs space-y-3" style={{ backgroundColor: 'rgba(0,0,0,0.3)', border: '1px solid var(--chrome-700)' }}>
+        <div className="mt-2 text-xs space-y-2 text-gray-400">
           {selectedChain === 'solana' && (
             <>
               <div>
