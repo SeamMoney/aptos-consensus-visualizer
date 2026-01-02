@@ -98,47 +98,72 @@ const calculateChainFee = (
   chainKey: ChainKey,
   intensity: number,
   elapsed: number,
-  prevFee: number
+  prevFee: number,
+  demandMax: number // Pass in the scenario's max demand
 ): number => {
   const chain = CHAINS[chainKey];
+  const demand = intensity * demandMax;
+  const utilizationRatio = demand / chain.capacity;
 
-  // Calculate base target fee based on intensity (0-1)
+  // Calculate base target fee based on utilization
   let baseFeeTarget: number;
 
   switch (chainKey) {
-    case 'ethereum': {
-      // EIP-1559: exponential spike at high utilization
-      const feeMultiplier = Math.pow(chain.peakFee / chain.baseFee, Math.pow(intensity, 2));
-      baseFeeTarget = chain.baseFee * feeMultiplier;
+    case 'ethereum':
+    case 'polygon': {
+      // EIP-1559: fee spikes but plateaus when demand is priced out
+      // Historical max: ~$50-100 during extreme congestion
+      if (utilizationRatio > 1) {
+        // Over capacity: fee spikes to price out excess demand
+        // Log scale - fee rises fast initially, then plateaus
+        const logPressure = Math.log2(Math.min(utilizationRatio, 50) + 1);
+        const feeMultiplier = Math.pow(2, logPressure * 1.5);
+        baseFeeTarget = Math.min(chain.peakFee, chain.baseFee * feeMultiplier);
+      } else if (utilizationRatio > 0.5) {
+        // Approaching capacity: fee starts rising
+        const pressure = (utilizationRatio - 0.5) * 2; // 0 to 1
+        const feeMultiplier = 1 + pressure * 5;
+        baseFeeTarget = chain.baseFee * feeMultiplier;
+      } else {
+        // Low utilization: base fee
+        baseFeeTarget = chain.baseFee * (1 + utilizationRatio * 0.5);
+      }
       break;
     }
     case 'solana': {
       // Solana's local fee markets: fees spike on HOT ACCOUNTS, not total TPS
       // Even at 10% total capacity, popular DEXs/mints see massive priority fee spikes
-      // This simulates hot account contention, not total network congestion
-      const hotAccountContention = Math.pow(intensity, 1.5); // Hot accounts get contested quickly
-      const feeMultiplier = 1 + (chain.peakFee / chain.baseFee - 1) * hotAccountContention;
-      baseFeeTarget = chain.baseFee * feeMultiplier;
+      const hotAccountContention = Math.pow(intensity, 1.5);
+      if (utilizationRatio > 0.5) {
+        // Heavy activity on hot accounts
+        const feeMultiplier = 1 + (chain.peakFee / chain.baseFee - 1) * hotAccountContention;
+        baseFeeTarget = Math.min(chain.peakFee, chain.baseFee * feeMultiplier);
+      } else {
+        // Normal activity
+        baseFeeTarget = chain.baseFee * (1 + hotAccountContention * 2);
+      }
       break;
     }
     case 'monad': {
-      // Variance-aware: very flat curve, barely moves
-      baseFeeTarget = chain.baseFee * (1 + intensity * 0.4);
-      break;
-    }
-    case 'polygon': {
-      // Low capacity: spikes faster than Ethereum
-      const feeMultiplier = Math.pow(chain.peakFee / chain.baseFee, Math.pow(intensity, 1.5));
-      baseFeeTarget = chain.baseFee * feeMultiplier;
+      // Variance-aware EIP-1559: max 3.6% change per block
+      // Fees stay very stable even under load due to dampening
+      const dampedPressure = Math.min(0.5, utilizationRatio * 0.3);
+      baseFeeTarget = chain.baseFee * (1 + dampedPressure);
       break;
     }
     case 'sui': {
-      // Reference gas price: moderate curve
-      baseFeeTarget = chain.baseFee * (1 + (chain.peakFee / chain.baseFee - 1) * Math.pow(intensity, 2));
+      // Reference gas price set by validators each epoch
+      // More stable than auction, but can rise under sustained load
+      if (utilizationRatio > 0.7) {
+        const pressure = (utilizationRatio - 0.7) / 0.3;
+        baseFeeTarget = chain.baseFee * (1 + pressure * 3);
+      } else {
+        baseFeeTarget = chain.baseFee * (1 + utilizationRatio * 0.3);
+      }
       break;
     }
     default:
-      baseFeeTarget = lerp(chain.baseFee, chain.peakFee, intensity);
+      baseFeeTarget = chain.baseFee * (1 + utilizationRatio);
   }
 
   // Add realistic market noise (proportional to fee size)
@@ -206,38 +231,33 @@ const calculateAptosFee = (
   return lerp(prevFee, clampedFee, 0.15);
 };
 
-// Calculate failure rate based on chain capacity vs demand (capped at 100%)
-const calculateFailureRate = (chainKey: ChainKey, demand: number): number => {
+// Calculate "priced out" rate - transactions that can't afford to go through
+// This isn't "failure" - it's users being priced out by high fees
+const calculatePricedOutRate = (chainKey: ChainKey, demand: number): number => {
   const chain = CHAINS[chainKey];
+  const utilizationRatio = demand / chain.capacity;
 
-  // Solana special case: uses theoretical 65k capacity, but has local fee market failures
-  // Transactions fail due to priority fee competition, not total TPS limits
+  // Solana: local fee markets mean some txs get dropped even at low utilization
   if (chainKey === 'solana') {
-    const utilizationRatio = demand / chain.capacity; // Use 65k theoretical
-    // Solana failures come from priority fee competition on hot accounts
-    // Even at low total utilization, hot accounts see dropped txs
     if (utilizationRatio > 0.5) {
-      // High load: 10-20% failures from dropped low-priority txs
-      return Math.min(0.25, chain.failureRate * Math.pow(utilizationRatio, 2));
+      return Math.min(0.20, chain.failureRate * Math.pow(utilizationRatio, 1.5));
     } else if (utilizationRatio > 0.15) {
-      // Moderate load: some failures on hot accounts
-      return Math.min(0.10, chain.failureRate * utilizationRatio);
+      return Math.min(0.08, chain.failureRate * utilizationRatio);
     }
     return 0;
   }
 
-  const utilizationRatio = demand / chain.capacity;
-
-  // When demand exceeds capacity, failures start happening
+  // For EIP-1559 chains (Ethereum, Polygon):
+  // When demand > capacity, excess demand gets "priced out" (stuck in mempool)
+  // The chain still processes at MAX capacity, but fees spike to reduce demand
   if (utilizationRatio > 1) {
-    // Over capacity - failure rate increases with overload
-    // At 2x capacity: ~50% fail, at 5x: ~80%, at 10x+: ~95%
-    const overloadFactor = utilizationRatio - 1;
-    const failureRate = 1 - (1 / (1 + overloadFactor * 0.5));
-    return Math.min(1.0, failureRate); // CAP AT 100%
+    // Calculate what % of demand can't get through
+    // At 2x demand: 50% priced out, at 3x: 67%, at 10x: 90%
+    const pricedOutRate = 1 - (1 / utilizationRatio);
+    return Math.min(0.95, pricedOutRate); // Cap at 95% - some always pay
   } else if (utilizationRatio > 0.8) {
-    // Approaching capacity - congestion starts
-    return Math.min(1.0, chain.failureRate * Math.pow((utilizationRatio - 0.8) / 0.2, 2));
+    // Approaching capacity - some start getting priced out
+    return Math.min(0.15, (utilizationRatio - 0.8) / 0.2 * 0.15);
   }
   return 0;
 };
@@ -521,9 +541,10 @@ export const StableFeesComparison = memo(function StableFeesComparison({
       selectedChainRef.current,
       intensity,
       elapsed,
-      prevChainFeeRef.current
+      prevChainFeeRef.current,
+      scenario.demand.max // Pass scenario's max demand for utilization calculation
     );
-    prevChainFeeRef.current = chainFee; // Store for Monad's variance-aware calc
+    prevChainFeeRef.current = chainFee;
 
     // Calculate Aptos fee with contention and capacity pressure
     const aptFee = calculateAptosFee(
@@ -535,8 +556,8 @@ export const StableFeesComparison = memo(function StableFeesComparison({
     );
     prevAptosFeeRef.current = aptFee;
 
-    // Calculate failure rate using realistic model
-    const failureRate = calculateFailureRate(selectedChainRef.current, demand);
+    // Calculate "priced out" rate (not failures - users can't afford fees)
+    const pricedOutRate = calculatePricedOutRate(selectedChainRef.current, demand);
 
     // Store data points
     leftDataRef.current.push({ time: elapsed, fee: chainFee });
@@ -552,7 +573,7 @@ export const StableFeesComparison = memo(function StableFeesComparison({
       setAptosFee(aptFee);
       setLeftPeakFee(prev => Math.max(prev, chainFee));
       setAptosPeakFee(prev => Math.max(prev, aptFee));
-      setLeftFailedPct(Math.round(failureRate * 100));
+      setLeftFailedPct(Math.round(pricedOutRate * 100));
 
       // Track congestion status
       const congestionStatus = isChainCongested(selectedChainRef.current, demand);
@@ -1124,7 +1145,7 @@ export const StableFeesComparison = memo(function StableFeesComparison({
               className="absolute top-0 left-0 right-0 text-center py-1 text-xs font-bold animate-pulse"
               style={{ backgroundColor: 'rgba(239, 68, 68, 0.9)', color: 'white' }}
             >
-              ⚠️ OVER CAPACITY ({utilizationPct}%) - TXs FAILING
+              ⚠️ {utilizationPct}% DEMAND vs CAPACITY - MEMPOOL BACKLOG
             </div>
           )}
           <div className={`flex justify-between items-start mb-2 ${isOverCapacity ? 'mt-6' : ''}`}>
@@ -1140,7 +1161,7 @@ export const StableFeesComparison = memo(function StableFeesComparison({
                   animation: leftFailedPct > 30 ? 'pulse 1s infinite' : 'none'
                 }}
               >
-                {leftFailedPct}% FAILED
+                {leftFailedPct}% PRICED OUT
               </span>
             )}
           </div>
