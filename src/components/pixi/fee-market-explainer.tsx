@@ -126,16 +126,19 @@ export const FeeMarketExplainer = memo(function FeeMarketExplainer({
       setAuctionFee(calculatedAuctionFee);
     }
 
-    // Layout
-    const margin = { left: 20, right: 20, top: 15, bottom: 15 };
+    // Layout - responsive
+    const isMobile = width < 400;
+    const margin = { left: 15, right: 15, top: 10, bottom: 10 };
     const centerX = width / 2;
 
-    const titleHeight = 40;
-    const modelHeight = (height - margin.top - margin.bottom - titleHeight - 100) / 2;
+    const titleHeight = 35;
+    const formulaHeight = 50;
+    const availableHeight = height - margin.top - margin.bottom - titleHeight - formulaHeight - 20;
+    const modelHeight = availableHeight / 2 - 10;
 
     const auctionY = margin.top + titleHeight;
-    const flatY = auctionY + modelHeight + 30;
-    const formulaY = flatY + modelHeight + 20;
+    const flatY = auctionY + modelHeight + 20;
+    const formulaY = flatY + modelHeight + 15;
 
     // Draw background
     const bg = graphicsRef.current.background;
@@ -157,17 +160,18 @@ export const FeeMarketExplainer = memo(function FeeMarketExplainer({
       }
       bg.stroke();
 
-      // Demand indicator bar at top
-      const demandBarWidth = width - margin.left * 2 - 200;
-      const demandBarX = margin.left + 100;
-      const demandBarY = margin.top + 8;
+      // Demand indicator bar at top - adjusted for mobile
+      const demandLabelWidth = isMobile ? 80 : 100;
+      const demandBarWidth = width - margin.left * 2 - demandLabelWidth - 20;
+      const demandBarX = margin.left + demandLabelWidth;
+      const demandBarY = margin.top + 6;
 
-      bg.roundRect(demandBarX, demandBarY, demandBarWidth, 16, 4);
+      bg.roundRect(demandBarX, demandBarY, demandBarWidth, 14, 4);
       bg.fill({ color: 0x1a1a2e });
 
       const demandFill = (demand / 100) * demandBarWidth;
       const demandColor = demand > 80 ? PIXI_COLORS.danger : demand > 50 ? PIXI_COLORS.accent : PIXI_COLORS.secondary;
-      bg.roundRect(demandBarX, demandBarY, demandFill, 16, 4);
+      bg.roundRect(demandBarX, demandBarY, demandFill, 14, 4);
       bg.fill({ color: demandColor, alpha: 0.8 });
     }
 
@@ -178,15 +182,16 @@ export const FeeMarketExplainer = memo(function FeeMarketExplainer({
 
       // Section background (red tint when high demand)
       const isHighDemand = demand > 80;
-      auction.roundRect(margin.left, auctionY, width - margin.left * 2, modelHeight, 10);
+      auction.roundRect(margin.left, auctionY, width - margin.left * 2, modelHeight, 8);
       auction.fill({ color: isHighDemand ? 0x1a0d0d : 0x0d1117, alpha: 0.95 });
       auction.stroke({ width: 1, color: isHighDemand ? PIXI_COLORS.danger : PIXI_COLORS.chrome[600], alpha: 0.5 });
 
-      // Fee chart
-      const chartX = margin.left + 100;
-      const chartWidth = width - margin.left * 2 - 180;
-      const chartHeight = modelHeight - 60;
-      const chartY = auctionY + 45;
+      // Fee chart - responsive sizing
+      const chartMargin = isMobile ? 70 : 100;
+      const chartX = margin.left + chartMargin;
+      const chartWidth = width - margin.left * 2 - chartMargin - 80;
+      const chartHeight = modelHeight - 50;
+      const chartY = auctionY + 38;
 
       // Chart background
       auction.roundRect(chartX, chartY, chartWidth, chartHeight, 6);
@@ -241,15 +246,16 @@ export const FeeMarketExplainer = memo(function FeeMarketExplainer({
       flat.clear();
 
       // Section background (always calm green tint)
-      flat.roundRect(margin.left, flatY, width - margin.left * 2, modelHeight, 10);
+      flat.roundRect(margin.left, flatY, width - margin.left * 2, modelHeight, 8);
       flat.fill({ color: 0x0d1a14, alpha: 0.95 });
       flat.stroke({ width: 1, color: PIXI_COLORS.primary, alpha: 0.4 });
 
-      // Fee chart
-      const chartX = margin.left + 100;
-      const chartWidth = width - margin.left * 2 - 180;
-      const chartHeight = modelHeight - 60;
-      const chartY = flatY + 45;
+      // Fee chart - responsive sizing
+      const chartMargin = isMobile ? 70 : 100;
+      const chartX = margin.left + chartMargin;
+      const chartWidth = width - margin.left * 2 - chartMargin - 80;
+      const chartHeight = modelHeight - 50;
+      const chartY = flatY + 38;
 
       // Chart background
       flat.roundRect(chartX, chartY, chartWidth, chartHeight, 6);
@@ -309,30 +315,31 @@ export const FeeMarketExplainer = memo(function FeeMarketExplainer({
     // Update texts
     const texts = textsRef.current;
     if (texts.length >= 15) {
-      const chartX = margin.left + 100;
-      const chartWidth = width - margin.left * 2 - 180;
-      const chartHeight = modelHeight - 60;
-      const auctionChartY = auctionY + 45;
-      const flatChartY = flatY + 45;
+      const chartMargin = isMobile ? 70 : 100;
+      const chartX = margin.left + chartMargin;
+      const chartWidth = width - margin.left * 2 - chartMargin - 80;
+      const chartHeight = modelHeight - 50;
+      const auctionChartY = auctionY + 38;
+      const flatChartY = flatY + 38;
 
-      // Title
-      texts[0].x = centerX;
-      texts[0].y = margin.top - 2;
-      texts[0].anchor.set(0.5, 0);
+      // Title - left aligned
+      texts[0].x = margin.left + 10;
+      texts[0].y = margin.top + 2;
+      texts[0].anchor.set(0, 0);
 
       // Demand label
       texts[1].text = `DEMAND: ${Math.round(demand)}%`;
-      texts[1].x = margin.left + 60;
-      texts[1].y = margin.top + 9;
+      texts[1].x = margin.left + 10;
+      texts[1].y = margin.top + 20;
       texts[1].anchor.set(0, 0);
 
       // Auction model header
-      texts[2].x = margin.left + 15;
-      texts[2].y = auctionY + 12;
+      texts[2].x = margin.left + 10;
+      texts[2].y = auctionY + 8;
 
       // Auction description
-      texts[3].x = margin.left + 15;
-      texts[3].y = auctionY + 28;
+      texts[3].x = margin.left + 10;
+      texts[3].y = auctionY + 22;
 
       // Auction Y-axis label
       texts[4].x = chartX - 10;
