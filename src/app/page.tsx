@@ -30,6 +30,7 @@ import {
   BlockSTMExplainer,
   FeeMarketExplainer,
   PerpDexScenario,
+  EncryptedMempool,
 } from "@/components/pixi";
 import { useAptosStream } from "@/hooks/useAptosStream";
 import { LearnMoreLink } from "@/components/ui/tooltip";
@@ -260,6 +261,11 @@ export default function Home() {
         {/* Fee Market Economics Explainer */}
         <section className="mb-4">
           <FeeMarketExplainer />
+        </section>
+
+        {/* Encrypted Mempool - MEV Protection */}
+        <section className="mb-4" id="encrypted-mempool">
+          <EncryptedMempool />
         </section>
 
         {/* Perp DEX Flash Crash Scenario */}

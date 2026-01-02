@@ -46,7 +46,7 @@ export const OrderbookStress = memo(function OrderbookStress({
   const askSizesRef = useRef<number[]>([]);
   const startTimeRef = useRef(performance.now());
   const tradeIdRef = useRef(0);
-  const frameRef = useRef<number>();
+  const frameRef = useRef<number | undefined>(undefined);
   const lastUpdateRef = useRef(0);
   const lastTradeRef = useRef(0);
   const smoothLatencyRef = useRef(10); // For smooth latency transitions
@@ -255,50 +255,31 @@ export const OrderbookStress = memo(function OrderbookStress({
           setTrades(prev => [newTrade, ...prev].slice(0, 8));
         }
 
-        // LANES: directly proportional to TPS - deterministic count
-        // Calculate exact number of lanes that should be active based on TPS
-        const targetActiveLanes = Math.floor(intensity * CONFIG.lanes);
+        // LANES: proportional to TPS - always show SOME activity
+        // Even at 100 TPS we should see occasional lane firing
+        // At 500K TPS, most lanes should be constantly lit
+
+        // Calculate fire chance based on current TPS directly
+        const tpsRatio = currentTps / CONFIG.maxTPS; // 0.0002 at 100 TPS, 1.0 at 500K
+        const baseFireChance = 0.03; // Always 3% minimum chance
+        const scaledFireChance = baseFireChance + tpsRatio * 0.5; // Up to 53% at peak
 
         setLaneActivity(prev => {
-          const newActivity = [...prev];
-
-          // Count currently active lanes
-          const currentActive = newActivity.filter(a => a > 0.3).length;
-
-          // Determine how many lanes need to change
-          const lanesToActivate = Math.max(0, targetActiveLanes - currentActive);
-          const lanesToDeactivate = Math.max(0, currentActive - targetActiveLanes);
-
-          // Process each lane
-          for (let i = 0; i < CONFIG.lanes; i++) {
-            if (newActivity[i] > 0) {
-              // Decay active lanes
-              newActivity[i] = Math.max(0, newActivity[i] - 0.15);
+          return prev.map((activity) => {
+            // Decay existing activity
+            if (activity > 0) {
+              const decayRate = 0.1 + tpsRatio * 0.15; // Faster decay at high TPS for more flicker
+              const newActivity = activity - decayRate;
+              if (newActivity > 0) return newActivity;
             }
-          }
 
-          // Activate lanes to match target (spread across grid)
-          let activated = 0;
-          for (let i = 0; i < CONFIG.lanes && activated < lanesToActivate + Math.ceil(targetActiveLanes * 0.3); i++) {
-            const idx = (i * 7 + Math.floor(now / 50)) % CONFIG.lanes; // Spread pattern
-            if (newActivity[idx] < 0.3 && Math.random() < 0.6) {
-              newActivity[idx] = 0.7 + Math.random() * 0.3;
-              activated++;
+            // Fire new lanes based on TPS
+            if (Math.random() < scaledFireChance) {
+              return 0.7 + Math.random() * 0.3;
             }
-          }
 
-          // Keep some lanes firing at peak for visual interest
-          if (intensity > 0.5) {
-            const extraFires = Math.floor(intensity * 8);
-            for (let i = 0; i < extraFires; i++) {
-              const idx = Math.floor(Math.random() * CONFIG.lanes);
-              if (newActivity[idx] < 0.5) {
-                newActivity[idx] = 0.8 + Math.random() * 0.2;
-              }
-            }
-          }
-
-          return newActivity;
+            return 0;
+          });
         });
       }
 
