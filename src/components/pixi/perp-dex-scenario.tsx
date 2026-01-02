@@ -157,18 +157,19 @@ export const PerpDexScenario = memo(function PerpDexScenario({
       setPhase(phaseName);
     }
 
-    // Layout
-    const margin = { left: 20, right: 20, top: 15, bottom: 15 };
+    // Layout - responsive for mobile/desktop
+    const isMobile = width < 400;
+    const margin = { left: 15, right: 15, top: 10, bottom: 10 };
     const centerX = width / 2;
 
-    const titleHeight = 45;
-    const priceChartHeight = height * 0.35;
-    const orderFlowHeight = height * 0.25;
-    const statsHeight = height * 0.20;
+    const titleHeight = 35;
+    const priceChartHeight = height * 0.38;
+    const orderFlowHeight = height * 0.28;
+    const statsHeight = height * 0.18;
 
     const priceChartY = margin.top + titleHeight;
-    const orderFlowY = priceChartY + priceChartHeight + 15;
-    const statsY = orderFlowY + orderFlowHeight + 15;
+    const orderFlowY = priceChartY + priceChartHeight + 10;
+    const statsY = orderFlowY + orderFlowHeight + 10;
 
     // Draw background
     const bg = graphicsRef.current.background;
@@ -363,21 +364,22 @@ export const PerpDexScenario = memo(function PerpDexScenario({
     if (stats) {
       stats.clear();
 
-      const statWidth = (width - margin.left * 2 - 30) / 3;
-      const statHeight = 50;
+      const statSpacing = 10;
+      const statWidth = (width - margin.left * 2 - statSpacing * 2) / 3;
+      const statHeight = 45;
 
       // Gas fee box
-      stats.roundRect(margin.left, statsY, statWidth, statHeight, 8);
+      stats.roundRect(margin.left, statsY, statWidth, statHeight, 6);
       stats.fill({ color: 0x0d1a14, alpha: 0.95 });
       stats.stroke({ width: 1, color: PIXI_COLORS.primary, alpha: 0.4 });
 
       // Slippage box
-      stats.roundRect(margin.left + statWidth + 15, statsY, statWidth, statHeight, 8);
+      stats.roundRect(margin.left + statWidth + statSpacing, statsY, statWidth, statHeight, 6);
       stats.fill({ color: 0x0d1a14, alpha: 0.95 });
       stats.stroke({ width: 1, color: PIXI_COLORS.primary, alpha: 0.4 });
 
       // Failed txs box
-      stats.roundRect(margin.left + (statWidth + 15) * 2, statsY, statWidth, statHeight, 8);
+      stats.roundRect(margin.left + (statWidth + statSpacing) * 2, statsY, statWidth, statHeight, 6);
       stats.fill({ color: 0x0d1a14, alpha: 0.95 });
       stats.stroke({ width: 1, color: PIXI_COLORS.success, alpha: 0.4 });
     }
@@ -385,77 +387,83 @@ export const PerpDexScenario = memo(function PerpDexScenario({
     // Update texts
     const texts = textsRef.current;
     if (texts.length >= 16) {
-      const statWidth = (width - margin.left * 2 - 30) / 3;
+      const statWidth = (width - margin.left * 2 - 20) / 3;
 
-      // Title
-      texts[0].x = centerX;
-      texts[0].y = margin.top + 5;
-      texts[0].anchor.set(0.5, 0);
+      // Title - left aligned on mobile to avoid overlap
+      texts[0].x = margin.left + 10;
+      texts[0].y = margin.top + 3;
+      texts[0].anchor.set(0, 0);
 
-      // Phase indicator
+      // Phase indicator - stays right
       texts[1].text = phaseName;
-      texts[1].x = width - margin.right - 15;
-      texts[1].y = margin.top + 5;
+      texts[1].x = width - margin.right - 10;
+      texts[1].y = margin.top + 3;
       texts[1].anchor.set(1, 0);
       texts[1].style.fill = crashIntensity > 0.3 ? PIXI_COLORS.danger : PIXI_COLORS.chrome[400];
 
       // Price section header
-      texts[2].x = margin.left + 15;
-      texts[2].y = priceChartY + 12;
+      texts[2].x = margin.left + 10;
+      texts[2].y = priceChartY + 8;
 
       // Current price
       texts[3].text = `$${price.toLocaleString()}`;
-      texts[3].x = width - margin.right - 70;
+      texts[3].x = width - margin.right - 55;
       texts[3].y = priceChartY + priceChartHeight / 2;
       texts[3].anchor.set(0.5, 0.5);
 
       // Order flow header
-      texts[4].x = margin.left + 15;
-      texts[4].y = orderFlowY + 12;
+      texts[4].x = margin.left + 10;
+      texts[4].y = orderFlowY + 8;
 
       // Orders/sec value
       texts[5].text = `${formatNumber(Math.round(orders))}/sec`;
-      texts[5].x = margin.left + 80;
-      texts[5].y = orderFlowY + 43;
+      texts[5].x = margin.left + 75;
+      texts[5].y = orderFlowY + 38;
 
       // Liquidations label
       texts[6].text = liqs > 0 ? `LIQUIDATIONS: ${formatNumber(liqs)}` : "LIQUIDATIONS: 0";
-      texts[6].x = margin.left + 15;
-      texts[6].y = orderFlowY + 78;
+      texts[6].x = margin.left + 10;
+      texts[6].y = orderFlowY + 70;
       texts[6].style.fill = liqs > 0 ? PIXI_COLORS.danger : PIXI_COLORS.chrome[500];
 
-      // Stats labels and values
+      // Stats labels and values - adjusted spacing
+      const statSpacing = 10;
       texts[7].x = margin.left + statWidth / 2;
-      texts[7].y = statsY + 10;
+      texts[7].y = statsY + 8;
       texts[7].anchor.set(0.5, 0);
 
       texts[8].text = "$0.00012";
       texts[8].x = margin.left + statWidth / 2;
-      texts[8].y = statsY + 28;
+      texts[8].y = statsY + 24;
       texts[8].anchor.set(0.5, 0);
 
-      texts[9].x = margin.left + statWidth + 15 + statWidth / 2;
-      texts[9].y = statsY + 10;
+      texts[9].x = margin.left + statWidth + statSpacing + statWidth / 2;
+      texts[9].y = statsY + 8;
       texts[9].anchor.set(0.5, 0);
 
       texts[10].text = "0.02%";
-      texts[10].x = margin.left + statWidth + 15 + statWidth / 2;
-      texts[10].y = statsY + 28;
+      texts[10].x = margin.left + statWidth + statSpacing + statWidth / 2;
+      texts[10].y = statsY + 24;
       texts[10].anchor.set(0.5, 0);
 
-      texts[11].x = margin.left + (statWidth + 15) * 2 + statWidth / 2;
-      texts[11].y = statsY + 10;
+      texts[11].x = margin.left + (statWidth + statSpacing) * 2 + statWidth / 2;
+      texts[11].y = statsY + 8;
       texts[11].anchor.set(0.5, 0);
 
       texts[12].text = "0";
-      texts[12].x = margin.left + (statWidth + 15) * 2 + statWidth / 2;
-      texts[12].y = statsY + 28;
+      texts[12].x = margin.left + (statWidth + statSpacing) * 2 + statWidth / 2;
+      texts[12].y = statsY + 24;
       texts[12].anchor.set(0.5, 0);
 
-      // Bottom message
-      texts[13].text = "Even during flash crash: fees flat, zero failed transactions, minimal slippage";
+      // Bottom message - hidden on very small screens
+      if (width > 350) {
+        texts[13].text = "Even during flash crash: fees flat, zero failed txs";
+        texts[13].visible = true;
+      } else {
+        texts[13].visible = false;
+      }
       texts[13].x = centerX;
-      texts[13].y = height - margin.bottom - 5;
+      texts[13].y = height - margin.bottom - 3;
       texts[13].anchor.set(0.5, 1);
     }
   }, []);
