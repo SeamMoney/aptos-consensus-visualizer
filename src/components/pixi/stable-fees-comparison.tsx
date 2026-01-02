@@ -622,16 +622,17 @@ export const StableFeesComparison = memo(function StableFeesComparison({
       setRightYAxisLabels(newRightLabels);
     }
 
-    // Layout calculations
-    const margin = 20;
-    const demandMeterHeight = 50;
-    const demandMeterY = 10;
-    const chartTop = demandMeterY + demandMeterHeight + 15;
-    const capacityHeight = 70;
-    const chartHeight = height - chartTop - capacityHeight - 30;
+    // Layout calculations - responsive margins
+    const isMobile = width < 640;
+    const margin = isMobile ? 12 : 20;
+    const demandMeterHeight = isMobile ? 40 : 50;
+    const demandMeterY = 8;
+    const chartTop = demandMeterY + demandMeterHeight + (isMobile ? 10 : 15);
+    const capacityHeight = isMobile ? 60 : 70;
+    const chartHeight = height - chartTop - capacityHeight - (isMobile ? 20 : 30);
     const halfWidth = width / 2;
-    const chartWidth = halfWidth - margin * 2 - 10;
-    const capacityY = chartTop + chartHeight + 20;
+    const chartWidth = halfWidth - margin * 1.5 - (isMobile ? 5 : 10);
+    const capacityY = chartTop + chartHeight + (isMobile ? 12 : 20);
 
     // Draw background
     const bg = graphicsRef.current.background;
@@ -726,12 +727,12 @@ export const StableFeesComparison = memo(function StableFeesComparison({
       const yMin = Math.max(0, dataMin - padding);
       const yMax = dataMax + padding;
 
-      // Draw chart area
-      // Narrower Y-axis labels (40px) for more chart width
-      const chartInnerX = margin + 40;
-      const chartInnerWidth = chartWidth - 50;
-      const chartInnerTop = chartTop + 40;
-      const chartInnerHeight = chartHeight - 55;
+      // Draw chart area - responsive inner margins
+      const yAxisWidth = isMobile ? 32 : 40;
+      const chartInnerX = margin + yAxisWidth;
+      const chartInnerWidth = chartWidth - (isMobile ? 38 : 50);
+      const chartInnerTop = chartTop + (isMobile ? 32 : 40);
+      const chartInnerHeight = chartHeight - (isMobile ? 42 : 55);
 
       // Grid lines
       leftChart.setStrokeStyle({ width: 1, color: 0x374151, alpha: 0.3 });
@@ -808,12 +809,12 @@ export const StableFeesComparison = memo(function StableFeesComparison({
       const aptosYMin = 0;
       const aptosYMax = scenario.aptosContention > 0.2 ? 0.008 : scenario.aptosContention > 0 ? 0.003 : 0.0015;
 
-      // Draw chart area
-      // Narrower Y-axis labels (40px) for more chart width
-      const chartInnerX = halfWidth + margin + 40;
-      const chartInnerWidth = chartWidth - 50;
-      const chartInnerTop = chartTop + 40;
-      const chartInnerHeight = chartHeight - 55;
+      // Draw chart area - responsive inner margins (same as left)
+      const rightYAxisWidth = isMobile ? 32 : 40;
+      const chartInnerX = halfWidth + margin + rightYAxisWidth;
+      const chartInnerWidth = chartWidth - (isMobile ? 38 : 50);
+      const chartInnerTop = chartTop + (isMobile ? 32 : 40);
+      const chartInnerHeight = chartHeight - (isMobile ? 42 : 55);
 
       // Grid lines
       rightChart.setStrokeStyle({ width: 1, color: 0x374151, alpha: 0.3 });
@@ -875,31 +876,41 @@ export const StableFeesComparison = memo(function StableFeesComparison({
       capacity.fill({ color: 0x1f2937, alpha: 0.3 });
       capacity.stroke({ width: 1, color: 0x374151 });
 
-      const barStartX = margin + 140;
-      const barWidth = (width - margin * 2 - 160) / 2 - 20;
-      const barHeight = 14;
+      const barStartX = margin + 20;
+      const barWidth = width - margin * 2 - 40;
+      const barHeight = 18;
 
       // Left chain capacity bar
-      const leftBarY = capacityY + 18;
+      const leftBarY = capacityY + 15;
       capacity.roundRect(barStartX, leftBarY, barWidth, barHeight, 4);
       capacity.fill({ color: 0x0d1117 });
+      capacity.stroke({ width: 1, color: 0x374151 });
 
-      // Calculate how much of capacity is used
+      // Calculate how much of capacity is used - use LOG SCALE for visibility
+      // Log scale: even 0.1% shows as visible bar
       const leftCapacityUsed = Math.min(1, demand / chain.capacity);
-      const leftFillWidth = leftCapacityUsed * barWidth;
-      const leftBarColor = leftCapacityUsed > 0.8 ? PIXI_COLORS.danger : chain.color;
+      const logLeftUsed = leftCapacityUsed > 0
+        ? Math.max(0.02, Math.log10(leftCapacityUsed * 100 + 1) / Math.log10(101)) // Min 2% visible
+        : 0;
+      const leftFillWidth = Math.max(leftCapacityUsed > 0 ? 8 : 0, logLeftUsed * barWidth); // Min 8px if any usage
+      const leftBarColor = leftCapacityUsed > 1 ? PIXI_COLORS.danger : leftCapacityUsed > 0.8 ? 0xfbbf24 : chain.color;
       capacity.roundRect(barStartX, leftBarY, leftFillWidth, barHeight, 4);
-      capacity.fill({ color: leftBarColor, alpha: 0.8 });
+      capacity.fill({ color: leftBarColor, alpha: 0.9 });
 
       // Right (Aptos) capacity bar
       const rightBarY = capacityY + 42;
       capacity.roundRect(barStartX, rightBarY, barWidth, barHeight, 4);
       capacity.fill({ color: 0x0d1117 });
+      capacity.stroke({ width: 1, color: 0x374151 });
 
+      // Aptos - same log scale
       const aptosCapacityUsed = Math.min(1, demand / APTOS.currentCapacity);
-      const aptosFillWidth = aptosCapacityUsed * barWidth;
+      const logAptosUsed = aptosCapacityUsed > 0
+        ? Math.max(0.02, Math.log10(aptosCapacityUsed * 100 + 1) / Math.log10(101))
+        : 0;
+      const aptosFillWidth = Math.max(aptosCapacityUsed > 0 ? 8 : 0, logAptosUsed * barWidth);
       capacity.roundRect(barStartX, rightBarY, aptosFillWidth, barHeight, 4);
-      capacity.fill({ color: APTOS.color, alpha: 0.8 });
+      capacity.fill({ color: APTOS.color, alpha: 0.9 });
     }
 
     } catch {
@@ -1050,20 +1061,20 @@ export const StableFeesComparison = memo(function StableFeesComparison({
   const chain = CHAINS[selectedChain];
 
   return (
-    <div className={`chrome-card p-4 sm:p-6 ${className || ""}`}>
-      <div className="flex items-center justify-between mb-4">
-        <h3 className="section-title">Fee Comparison: Same Load</h3>
+    <div className={`chrome-card p-3 sm:p-4 md:p-6 ${className || ""}`}>
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 mb-3 sm:mb-4">
+        <h3 className="section-title text-base sm:text-lg">Fee Comparison: Same Load</h3>
         <div className="flex items-center gap-2">
           <button
             onClick={handlePlayPause}
-            className="px-3 py-1 text-sm rounded border transition-colors hover:bg-white/5"
+            className="px-2 py-1 sm:px-3 text-xs sm:text-sm rounded border transition-colors hover:bg-white/5"
             style={{ borderColor: "var(--chrome-700)", color: "var(--chrome-300)" }}
           >
             {isPlaying ? "Pause" : "Play"}
           </button>
           <button
             onClick={handleRestart}
-            className="px-3 py-1 text-sm rounded border transition-colors hover:bg-white/5"
+            className="px-2 py-1 sm:px-3 text-xs sm:text-sm rounded border transition-colors hover:bg-white/5"
             style={{ borderColor: "var(--chrome-700)", color: "var(--chrome-300)" }}
           >
             Restart
@@ -1071,14 +1082,14 @@ export const StableFeesComparison = memo(function StableFeesComparison({
         </div>
       </div>
 
-      {/* Scenario Selector */}
-      <div className="flex flex-wrap gap-2 mb-3">
-        <span className="text-xs text-gray-500 self-center mr-2">Load Scenario:</span>
+      {/* Scenario Selector - responsive */}
+      <div className="flex flex-wrap items-center gap-2 mb-3">
+        <span className="text-xs text-gray-500 mr-1 hidden sm:inline">Load:</span>
         {(Object.keys(SCENARIOS) as ScenarioKey[]).map((key) => (
           <button
             key={key}
             onClick={() => setSelectedScenario(key)}
-            className={`px-3 py-1.5 text-xs font-medium rounded-lg transition-all ${
+            className={`px-2 py-1 sm:px-3 sm:py-1.5 text-xs font-medium rounded-lg transition-all ${
               selectedScenario === key
                 ? 'ring-2 ring-offset-1 ring-offset-black'
                 : 'opacity-60 hover:opacity-100'
@@ -1097,20 +1108,20 @@ export const StableFeesComparison = memo(function StableFeesComparison({
             {SCENARIOS[key].name}
           </button>
         ))}
-        <span className="text-xs text-gray-500 self-center ml-2">
+        <span className="text-xs text-gray-500 ml-1 hidden sm:inline">
           {SCENARIOS[selectedScenario].description}
         </span>
       </div>
 
-      {/* Chain Selector */}
-      <div className="flex gap-2 mb-4">
+      {/* Chain Selector - responsive with wrapping */}
+      <div className="flex flex-wrap items-center gap-2 mb-4">
         {(Object.keys(CHAINS) as ChainKey[]).map((key) => (
           <button
             key={key}
             onClick={() => setSelectedChain(key)}
-            className={`px-4 py-2 text-sm font-medium rounded-lg transition-all ${
+            className={`px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium rounded-lg transition-all ${
               selectedChain === key
-                ? 'ring-2 ring-offset-2 ring-offset-black'
+                ? 'ring-2 ring-offset-1 sm:ring-offset-2 ring-offset-black'
                 : 'opacity-60 hover:opacity-100'
             }`}
             style={{
@@ -1127,9 +1138,9 @@ export const StableFeesComparison = memo(function StableFeesComparison({
             {CHAINS[key].name}
           </button>
         ))}
-        <span className="flex items-center px-3 text-sm text-gray-500">vs</span>
+        <span className="flex items-center px-2 sm:px-3 text-xs sm:text-sm text-gray-500">vs</span>
         <div
-          className="px-4 py-2 text-sm font-medium rounded-lg ring-2 ring-offset-2 ring-offset-black"
+          className="px-3 py-1.5 sm:px-4 sm:py-2 text-xs sm:text-sm font-medium rounded-lg ring-2 ring-offset-1 sm:ring-offset-2 ring-offset-black shrink-0"
           style={{
             backgroundColor: 'rgba(0,217,165,0.1)',
             color: '#00D9A5',
@@ -1141,10 +1152,10 @@ export const StableFeesComparison = memo(function StableFeesComparison({
         </div>
       </div>
 
-      {/* Stats Grid */}
-      <div className="grid grid-cols-2 gap-4 mb-4">
+      {/* Stats Grid - responsive */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4 mb-3 sm:mb-4">
         <div
-          className="p-4 rounded-lg border relative overflow-hidden"
+          className="p-3 sm:p-4 rounded-lg border relative overflow-hidden"
           style={{
             backgroundColor: isOverCapacity ? 'rgba(239, 68, 68, 0.15)' : leftFailedPct > 10 ? 'rgba(239, 68, 68, 0.1)' : `rgba(${parseInt(chain.color.toString(16).padStart(6, '0').slice(0,2), 16)}, ${parseInt(chain.color.toString(16).padStart(6, '0').slice(2,4), 16)}, ${parseInt(chain.color.toString(16).padStart(6, '0').slice(4,6), 16)}, 0.08)`,
             borderColor: isOverCapacity ? 'rgba(239, 68, 68, 0.6)' : leftFailedPct > 10 ? 'rgba(239, 68, 68, 0.3)' : `#${chain.color.toString(16).padStart(6, '0')}40`,
@@ -1156,16 +1167,16 @@ export const StableFeesComparison = memo(function StableFeesComparison({
               className="absolute top-0 left-0 right-0 text-center py-1 text-xs font-bold animate-pulse"
               style={{ backgroundColor: 'rgba(239, 68, 68, 0.9)', color: 'white' }}
             >
-              ⚠️ {utilizationPct}% DEMAND vs CAPACITY - MEMPOOL BACKLOG
+              ⚠️ {utilizationPct}% OVERLOADED
             </div>
           )}
-          <div className={`flex justify-between items-start mb-2 ${isOverCapacity ? 'mt-6' : ''}`}>
+          <div className={`flex flex-wrap justify-between items-start gap-1 mb-1 sm:mb-2 ${isOverCapacity ? 'mt-5 sm:mt-6' : ''}`}>
             <span className="text-xs" style={{ color: isOverCapacity ? '#ef4444' : `#${chain.color.toString(16).padStart(6, '0')}` }}>
-              {chain.name} ({chain.capacity.toLocaleString()} TPS{selectedChain === 'solana' ? ' theoretical' : ' max'})
+              {chain.name} ({chain.capacity.toLocaleString()} TPS)
             </span>
             {leftFailedPct > 0 && (
               <span
-                className="text-xs px-2 py-0.5 rounded font-bold"
+                className="text-xs px-1.5 sm:px-2 py-0.5 rounded font-bold"
                 style={{
                   backgroundColor: leftFailedPct > 50 ? 'rgba(239, 68, 68, 0.4)' : 'rgba(239, 68, 68, 0.2)',
                   color: '#ef4444',
@@ -1176,7 +1187,7 @@ export const StableFeesComparison = memo(function StableFeesComparison({
               </span>
             )}
           </div>
-          <div className="text-2xl font-bold mb-1" style={{ color: isOverCapacity || leftFailedPct > 10 ? '#ef4444' : '#ffffff' }}>
+          <div className="text-xl sm:text-2xl font-bold mb-1" style={{ color: isOverCapacity || leftFailedPct > 10 ? '#ef4444' : '#ffffff' }}>
             {formatFee(leftFee)}
           </div>
           <div className="flex justify-between text-xs" style={{ color: 'var(--chrome-500)' }}>
@@ -1187,7 +1198,7 @@ export const StableFeesComparison = memo(function StableFeesComparison({
           </div>
         </div>
         <div
-          className="p-4 rounded-lg border relative overflow-hidden"
+          className="p-3 sm:p-4 rounded-lg border relative overflow-hidden"
           style={{
             backgroundColor: selectedScenario === 'extreme' && aptosFee > 0.002
               ? 'rgba(251, 191, 36, 0.1)'
@@ -1206,18 +1217,18 @@ export const StableFeesComparison = memo(function StableFeesComparison({
                 color: '#fbbf24',
               }}
             >
-              {selectedScenario === 'extreme' ? '⚡ High Contention + Near Capacity' : '⚡ Some Contention'}
+              {selectedScenario === 'extreme' ? '⚡ High Contention' : '⚡ Some Contention'}
             </div>
           )}
-          <div className={`flex justify-between items-start mb-2 ${selectedScenario !== 'normal' ? 'mt-5' : ''}`}>
+          <div className={`flex flex-wrap justify-between items-start gap-1 mb-1 sm:mb-2 ${selectedScenario !== 'normal' ? 'mt-4 sm:mt-5' : ''}`}>
             <span className="text-xs" style={{ color: 'var(--accent)' }}>
               Aptos ({APTOS.currentCapacity.toLocaleString()} TPS)
             </span>
-            <span className="text-xs px-2 py-0.5 rounded" style={{ backgroundColor: 'rgba(0, 217, 165, 0.2)', color: '#00D9A5' }}>
+            <span className="text-xs px-1.5 sm:px-2 py-0.5 rounded" style={{ backgroundColor: 'rgba(0, 217, 165, 0.2)', color: '#00D9A5' }}>
               0% failed
             </span>
           </div>
-          <div className="text-2xl font-bold mb-1" style={{ color: '#ffffff' }}>
+          <div className="text-xl sm:text-2xl font-bold mb-1" style={{ color: '#ffffff' }}>
             {formatFee(aptosFee)}
           </div>
           <div className="flex justify-between text-xs" style={{ color: 'var(--chrome-500)' }}>
@@ -1232,7 +1243,7 @@ export const StableFeesComparison = memo(function StableFeesComparison({
               Utilization: {((currentDemand / APTOS.currentCapacity) * 100).toFixed(1)}%
               {currentDemand > APTOS.currentCapacity * 0.8 && (
                 <span className="ml-2" style={{ color: '#fbbf24' }}>
-                  (fee pressure building)
+                  (fee pressure)
                 </span>
               )}
             </div>
@@ -1243,8 +1254,8 @@ export const StableFeesComparison = memo(function StableFeesComparison({
       {/* Canvas with HTML overlays for text (avoids PixiJS TexturePool bugs) */}
       <div
         ref={containerRef}
-        className="canvas-wrap relative rounded-lg overflow-hidden"
-        style={{ height: "420px", backgroundColor: "#0a0a0b", border: "1px solid #333" }}
+        className="canvas-wrap relative rounded-lg overflow-hidden h-[380px] sm:h-[420px] md:h-[450px]"
+        style={{ backgroundColor: "#0a0a0b", border: "1px solid #333" }}
       >
         {!isReady && (
           <div className="absolute inset-0 flex items-center justify-center flex-col gap-2">
@@ -1257,22 +1268,22 @@ export const StableFeesComparison = memo(function StableFeesComparison({
           </div>
         )}
 
-        {/* HTML Text Overlays */}
+        {/* HTML Text Overlays - responsive */}
         {isReady && (
           <>
             {/* Demand meter label */}
-            <div className="absolute text-xs font-bold text-white pointer-events-none" style={{ top: 27, left: 35 }}>
+            <div className="absolute text-[10px] sm:text-xs font-bold text-white pointer-events-none top-[18px] sm:top-[22px] left-[20px] sm:left-[35px]">
               DEMAND: {currentDemand.toLocaleString()} TPS
             </div>
 
             {/* Left chart title & subtitle */}
             <div
-              className="absolute text-xs font-bold pointer-events-none"
-              style={{ top: 80, left: 28, color: `#${chain.color.toString(16).padStart(6, '0')}` }}
+              className="absolute text-[10px] sm:text-xs font-bold pointer-events-none top-[55px] sm:top-[70px] left-[16px] sm:left-[24px]"
+              style={{ color: `#${chain.color.toString(16).padStart(6, '0')}` }}
             >
               {chain.name.toUpperCase()}
             </div>
-            <div className="absolute pointer-events-none" style={{ top: 94, left: 28, color: '#9ca3af', fontSize: '9px' }}>
+            <div className="absolute pointer-events-none top-[67px] sm:top-[84px] left-[16px] sm:left-[24px] text-[8px] sm:text-[9px] text-gray-400 hidden sm:block">
               {chain.subtitle}
             </div>
 
@@ -1280,13 +1291,11 @@ export const StableFeesComparison = memo(function StableFeesComparison({
             {leftYAxisLabels.map((label, i) => (
               <div
                 key={`left-y-${i}`}
-                className="absolute pointer-events-none text-right"
+                className="absolute pointer-events-none text-right text-[7px] sm:text-[8px] text-gray-500"
                 style={{
-                  top: 115 + i * 63,
-                  left: 18,
-                  width: 38,
-                  color: '#6b7280',
-                  fontSize: '8px',
+                  top: `calc(${75 + i * 50}px + ${i * 8}px)`,
+                  left: 12,
+                  width: 32,
                 }}
               >
                 {label}
@@ -1295,12 +1304,12 @@ export const StableFeesComparison = memo(function StableFeesComparison({
 
             {/* Right chart title & subtitle */}
             <div
-              className="absolute text-xs font-bold pointer-events-none"
-              style={{ top: 80, left: 'calc(50% + 28px)', color: '#00D9A5' }}
+              className="absolute text-[10px] sm:text-xs font-bold pointer-events-none top-[55px] sm:top-[70px] left-[calc(50%+12px)] sm:left-[calc(50%+24px)]"
+              style={{ color: '#00D9A5' }}
             >
               APTOS
             </div>
-            <div className="absolute pointer-events-none" style={{ top: 94, left: 'calc(50% + 28px)', color: '#9ca3af', fontSize: '9px' }}>
+            <div className="absolute pointer-events-none top-[67px] sm:top-[84px] left-[calc(50%+12px)] sm:left-[calc(50%+24px)] text-[8px] sm:text-[9px] text-gray-400 hidden sm:block">
               {APTOS.subtitle}
             </div>
 
@@ -1308,13 +1317,11 @@ export const StableFeesComparison = memo(function StableFeesComparison({
             {rightYAxisLabels.map((label, i) => (
               <div
                 key={`right-y-${i}`}
-                className="absolute pointer-events-none text-right"
+                className="absolute pointer-events-none text-right text-[7px] sm:text-[8px] text-gray-500"
                 style={{
-                  top: 115 + i * 63,
-                  left: 'calc(50% + 18px)',
-                  width: 40,
-                  color: '#6b7280',
-                  fontSize: '8px',
+                  top: `calc(${75 + i * 50}px + ${i * 8}px)`,
+                  left: 'calc(50% + 8px)',
+                  width: 36,
                 }}
               >
                 {label}
@@ -1323,27 +1330,21 @@ export const StableFeesComparison = memo(function StableFeesComparison({
 
             {/* Current price labels on charts */}
             <div
-              className="absolute pointer-events-none font-bold px-2 py-1 rounded"
+              className="absolute pointer-events-none font-bold px-1.5 sm:px-2 py-0.5 sm:py-1 rounded text-[10px] sm:text-[11px] top-[85px] sm:top-[100px] right-[calc(50%+15px)] sm:right-[calc(50%+25px)]"
               style={{
-                top: 115,
-                right: 'calc(50% + 25px)',
-                backgroundColor: 'rgba(0,0,0,0.8)',
+                backgroundColor: 'rgba(0,0,0,0.85)',
                 border: `1px solid #${chain.color.toString(16).padStart(6, '0')}`,
                 color: `#${chain.color.toString(16).padStart(6, '0')}`,
-                fontSize: '11px',
               }}
             >
               {formatFee(leftFee)}
             </div>
             <div
-              className="absolute pointer-events-none font-bold px-2 py-1 rounded"
+              className="absolute pointer-events-none font-bold px-1.5 sm:px-2 py-0.5 sm:py-1 rounded text-[10px] sm:text-[11px] bottom-[90px] sm:bottom-[100px] right-[15px] sm:right-[25px]"
               style={{
-                top: 280,
-                right: 25,
-                backgroundColor: 'rgba(0,0,0,0.8)',
+                backgroundColor: 'rgba(0,0,0,0.85)',
                 border: '1px solid #00D9A5',
                 color: '#00D9A5',
-                fontSize: '11px',
               }}
             >
               {formatFee(aptosFee)}
@@ -1351,44 +1352,49 @@ export const StableFeesComparison = memo(function StableFeesComparison({
 
             {/* VS badge */}
             <div
-              className="absolute text-xs font-bold pointer-events-none"
-              style={{ top: '55%', left: '50%', transform: 'translate(-50%, -50%)', color: '#6b7280' }}
+              className="absolute text-[10px] sm:text-xs font-bold pointer-events-none text-gray-500"
+              style={{ top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }}
             >
               VS
             </div>
 
-            {/* Capacity section */}
-            <div className="absolute pointer-events-none" style={{ bottom: 48, left: 35, color: '#9ca3af', fontSize: '10px' }}>
-              {chain.name}: {chain.capacity.toLocaleString()} TPS capacity
+            {/* Capacity section - inside bars */}
+            <div
+              className="absolute pointer-events-none flex items-center justify-between px-2 sm:px-3 text-[9px] sm:text-[10px] bottom-[38px] sm:bottom-[45px] left-[25px] sm:left-[40px] right-[25px] sm:right-[40px]"
+            >
+              <span className="font-bold text-white" style={{ textShadow: '0 1px 2px rgba(0,0,0,0.9)' }}>
+                {chain.name}: {chain.capacity.toLocaleString()} TPS
+              </span>
+              <span
+                className="font-bold"
+                style={{
+                  color: utilizationPct > 100 ? '#fff' : utilizationPct > 80 ? '#fbbf24' : '#9ca3af',
+                  textShadow: '0 1px 2px rgba(0,0,0,0.9)',
+                }}
+              >
+                {utilizationPct > 100
+                  ? `🔥 ${utilizationPct}%`
+                  : utilizationPct > 80
+                  ? `⚠️ ${utilizationPct}%`
+                  : `${utilizationPct}%`}
+              </span>
             </div>
             <div
-              className="absolute pointer-events-none font-bold"
-              style={{
-                bottom: 48,
-                left: 190,
-                fontSize: '10px',
-                color: utilizationPct > 100 ? '#ef4444' : utilizationPct > 80 ? '#fbbf24' : '#9ca3af',
-                animation: utilizationPct > 100 ? 'pulse 0.5s infinite' : 'none'
-              }}
+              className="absolute pointer-events-none flex items-center justify-between px-2 sm:px-3 text-[9px] sm:text-[10px] bottom-[14px] sm:bottom-[18px] left-[25px] sm:left-[40px] right-[25px] sm:right-[40px]"
             >
-              {utilizationPct > 100
-                ? `🔥 ${utilizationPct}% OVERLOADED!`
-                : utilizationPct > 80
-                ? `⚠️ ${utilizationPct}% congested`
-                : `${utilizationPct}% used`}
-            </div>
-            <div className="absolute pointer-events-none" style={{ bottom: 28, left: 35, color: '#9ca3af', fontSize: '10px' }}>
-              Aptos: {APTOS.currentCapacity.toLocaleString()} TPS capacity
-            </div>
-            <div className="absolute pointer-events-none" style={{ bottom: 28, left: 190, color: '#00D9A5', fontSize: '10px' }}>
-              ✓ {Math.max(0.1, (currentDemand / APTOS.currentCapacity) * 100).toFixed(1)}% used
+              <span className="font-bold" style={{ color: '#00D9A5', textShadow: '0 1px 2px rgba(0,0,0,0.9)' }}>
+                Aptos: {APTOS.currentCapacity.toLocaleString()} TPS
+              </span>
+              <span style={{ color: '#00D9A5', textShadow: '0 1px 2px rgba(0,0,0,0.9)' }}>
+                ✓ {Math.max(0.1, (currentDemand / APTOS.currentCapacity) * 100).toFixed(1)}%
+              </span>
             </div>
           </>
         )}
       </div>
 
-      {/* Detailed Chain Comparison */}
-      <div className="mt-4 grid grid-cols-2 gap-3">
+      {/* Detailed Chain Comparison - responsive */}
+      <div className="mt-3 sm:mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
         {/* Left chain details */}
         <div
           className="p-3 rounded-lg"
