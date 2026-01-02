@@ -150,7 +150,8 @@ export const StableFeesComparison = memo(function StableFeesComparison({
     }
 
     // Layout - FULL CANVAS (proper scaling)
-    const margin = 15;
+    const isMobile = width < 400;
+    const margin = isMobile ? 10 : 15;
     const chartTop = 15;
     const chartHeight = height * 0.65;
     const chartWidth = halfWidth - margin * 2 - 5;
@@ -511,45 +512,63 @@ export const StableFeesComparison = memo(function StableFeesComparison({
     // Update text labels
     const texts = textsRef.current;
     if (texts.length >= 8) {
-      // Left title
-      texts[0].x = margin + chartWidth / 2 - 50;
+      // Adjust font sizes for mobile
+      const titleFontSize = isMobile ? 9 : 12;
+      const feeFontSize = isMobile ? 16 : 20;
+      const statusFontSize = isMobile ? 9 : 11;
+      const labelFontSize = isMobile ? 8 : 10;
+
+      // Left title - center it properly
+      texts[0].style.fontSize = titleFontSize;
+      texts[0].text = isMobile ? "FEE AUCTION" : "FEE AUCTION MODEL";
+      texts[0].x = margin + chartWidth / 2;
       texts[0].y = chartTop + 8;
+      texts[0].anchor.set(0.5, 0);
       texts[0].style.fill = spikeIntensity > 0.3 ? PIXI_COLORS.danger : CONFIG.auction.color;
 
       // Left fee value
+      texts[1].style.fontSize = feeFontSize;
       texts[1].text = formatFee(aucFee);
       texts[1].x = margin + 8;
       texts[1].y = chartTop + chartHeight - 28;
       texts[1].style.fill = spikeIntensity > 0.3 ? PIXI_COLORS.danger : 0xffffff;
 
       // Left status
+      texts[2].style.fontSize = statusFontSize;
       const multiplier = Math.round(aucFee / CONFIG.auction.baseFee);
       texts[2].text = spikeIntensity > 0.1 ? `${multiplier.toLocaleString()}x SPIKE!` : "";
       texts[2].x = margin + 8;
-      texts[2].y = chartTop + 30;
+      texts[2].y = chartTop + 28;
 
       // Left dropped
+      texts[3].style.fontSize = labelFontSize;
       const dropped = Math.round(spikeIntensity * CONFIG.auction.dropRate * 100);
       texts[3].text = `Dropped: ${dropped}%`;
       texts[3].x = margin + 8;
       texts[3].y = particleZoneY - 14;
       texts[3].style.fill = dropped > 0 ? PIXI_COLORS.danger : 0x6b7280;
 
-      // Right title
-      texts[4].x = halfWidth + margin + chartWidth / 2 - 35;
+      // Right title - center it properly
+      texts[4].style.fontSize = titleFontSize;
+      texts[4].text = isMobile ? "APTOS" : "APTOS (FLAT)";
+      texts[4].x = halfWidth + margin + chartWidth / 2;
       texts[4].y = chartTop + 8;
+      texts[4].anchor.set(0.5, 0);
 
       // Right fee value
+      texts[5].style.fontSize = feeFontSize;
       texts[5].text = formatFee(aptFee);
       texts[5].x = halfWidth + margin + 8;
       texts[5].y = chartTop + chartHeight - 28;
 
       // Right status
+      texts[6].style.fontSize = statusFontSize;
       texts[6].text = "STABLE";
       texts[6].x = halfWidth + margin + 8;
-      texts[6].y = chartTop + 30;
+      texts[6].y = chartTop + 28;
 
       // Right dropped
+      texts[7].style.fontSize = labelFontSize;
       texts[7].text = "Dropped: 0%";
       texts[7].x = halfWidth + margin + 8;
       texts[7].y = particleZoneY - 14;

@@ -359,48 +359,50 @@ export const FeeMarketExplainer = memo(function FeeMarketExplainer({
       texts[5].anchor.set(0.5, 0.5);
 
       // Flat model header
-      texts[6].x = margin.left + 15;
-      texts[6].y = flatY + 12;
+      texts[6].x = margin.left + 10;
+      texts[6].y = flatY + 8;
 
       // Flat description
-      texts[7].x = margin.left + 15;
-      texts[7].y = flatY + 28;
+      texts[7].x = margin.left + 10;
+      texts[7].y = flatY + 22;
 
       // Flat "FLAT" label
       texts[8].x = chartX + chartWidth / 2;
-      texts[8].y = flatChartY + chartHeight - 25;
+      texts[8].y = flatChartY + chartHeight - 22;
       texts[8].anchor.set(0.5, 0);
 
       // Flat current fee
       texts[9].text = "$0.0001";
-      texts[9].x = chartX + chartWidth + 45;
+      texts[9].x = chartX + chartWidth + 40;
       texts[9].y = flatChartY + chartHeight - 15;
       texts[9].anchor.set(0.5, 0.5);
 
-      // Formula texts
-      texts[10].text = "capacity >> demand";
-      texts[10].x = centerX - 120;
-      texts[10].y = formulaY + 18;
+      // Formula texts - responsive positioning
+      const formulaSpacing = isMobile ? 80 : 120;
+      texts[10].text = isMobile ? "capacity >> demand" : "capacity >> demand";
+      texts[10].x = centerX - formulaSpacing;
+      texts[10].y = formulaY + 12;
       texts[10].anchor.set(0.5, 0);
 
       texts[11].text = "no congestion";
       texts[11].x = centerX;
-      texts[11].y = formulaY + 18;
+      texts[11].y = formulaY + 12;
       texts[11].anchor.set(0.5, 0);
+      texts[11].visible = !isMobile; // Hide on mobile to save space
 
       texts[12].text = "flat fees";
-      texts[12].x = centerX + 120;
-      texts[12].y = formulaY + 18;
+      texts[12].x = centerX + formulaSpacing;
+      texts[12].y = formulaY + 12;
       texts[12].anchor.set(0.5, 0);
 
       texts[13].text = "160,000 TPS";
-      texts[13].x = centerX - 120;
-      texts[13].y = formulaY + 35;
+      texts[13].x = centerX - formulaSpacing;
+      texts[13].y = formulaY + 30;
       texts[13].anchor.set(0.5, 0);
 
       texts[14].text = "$0.0001 always";
-      texts[14].x = centerX + 120;
-      texts[14].y = formulaY + 35;
+      texts[14].x = centerX + formulaSpacing;
+      texts[14].y = formulaY + 30;
       texts[14].anchor.set(0.5, 0);
     }
   }, []);

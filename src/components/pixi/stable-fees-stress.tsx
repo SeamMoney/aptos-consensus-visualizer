@@ -121,12 +121,13 @@ export const StableFeesStress = memo(function StableFeesStress({
       setUtilization(Math.round(util));
     }
 
-    // Layout - FULL CANVAS
-    const margin = { left: 20, right: 20, top: 20, bottom: 20 };
+    // Layout - FULL CANVAS with mobile responsiveness
+    const isMobile = width < 400;
+    const margin = { left: isMobile ? 12 : 20, right: isMobile ? 12 : 20, top: 15, bottom: 15 };
     const centerX = width / 2;
 
-    // Section heights
-    const titleHeight = 50;
+    // Section heights - adjusted for mobile
+    const titleHeight = isMobile ? 40 : 50;
     const capacitySection = height * 0.35;
     const comparisonSection = height * 0.30;
     const particleSection = height * 0.25;
@@ -172,11 +173,11 @@ export const StableFeesStress = memo(function StableFeesStress({
     if (capacityBar) {
       capacityBar.clear();
 
-      const barPadding = 40;
+      const barPadding = isMobile ? 25 : 40;
       const barWidth = width - margin.left * 2 - barPadding * 2;
-      const barHeight = 60;
+      const barHeight = isMobile ? 50 : 60;
       const barX = margin.left + barPadding;
-      const barY = capacityY + 70;
+      const barY = capacityY + (isMobile ? 60 : 70);
 
       // Capacity container (the ceiling)
       capacityBar.roundRect(barX, barY, barWidth, barHeight, 8);
@@ -263,7 +264,7 @@ export const StableFeesStress = memo(function StableFeesStress({
     if (comparison) {
       comparison.clear();
 
-      const compPadding = 30;
+      const compPadding = isMobile ? 15 : 30;
       const boxWidth = (width - margin.left * 2 - compPadding * 3) / 2;
       const boxHeight = comparisonSection - 50;
       const aptosBoxX = margin.left + compPadding;
@@ -468,82 +469,104 @@ export const StableFeesStress = memo(function StableFeesStress({
     // Update text labels
     const texts = textsRef.current;
     if (texts.length >= 12) {
-      const compPadding = 30;
+      const compPadding = isMobile ? 15 : 30;
       const boxWidth = (width - margin.left * 2 - compPadding * 3) / 2;
       const aptosBoxX = margin.left + compPadding;
       const ethBoxX = aptosBoxX + boxWidth + compPadding;
       const boxY = comparisonY + 25;
 
-      // Title
+      // Responsive font sizes
+      const titleFontSize = isMobile ? 10 : 14;
+      const labelFontSize = isMobile ? 9 : 11;
+      const valueFontSize = isMobile ? 10 : 12;
+      const bigValueFontSize = isMobile ? 14 : 16;
+      const feeFontSize = isMobile ? 14 : 18;
+      const chainFontSize = isMobile ? 10 : 13;
+
+      // Title - shortened for mobile
+      texts[0].style.fontSize = titleFontSize;
+      texts[0].text = isMobile ? "CAPACITY >> DEMAND" : "WHY FEES STAY FLAT: CAPACITY >> DEMAND";
       texts[0].x = centerX;
-      texts[0].y = margin.top + 15;
+      texts[0].y = margin.top + 8;
       texts[0].anchor.set(0.5, 0);
 
       // Capacity label
-      texts[1].x = margin.left + 45;
-      texts[1].y = capacityY + 20;
+      texts[1].style.fontSize = labelFontSize;
+      texts[1].x = margin.left + (isMobile ? 20 : 45);
+      texts[1].y = capacityY + 15;
 
       // Capacity value
-      texts[2].text = "160,000 TPS";
-      texts[2].x = width - margin.right - 45;
-      texts[2].y = capacityY + 20;
+      texts[2].style.fontSize = valueFontSize;
+      texts[2].text = isMobile ? "160K TPS" : "160,000 TPS";
+      texts[2].x = width - margin.right - (isMobile ? 20 : 45);
+      texts[2].y = capacityY + 15;
       texts[2].anchor.set(1, 0);
 
       // Demand label
-      texts[3].text = `CURRENT DEMAND: ${formatNumber(Math.round(demand))} TPS`;
-      texts[3].x = margin.left + 45;
-      texts[3].y = capacityY + 45;
+      texts[3].style.fontSize = labelFontSize;
+      texts[3].text = isMobile ? `DEMAND: ${formatNumber(Math.round(demand))} TPS` : `CURRENT DEMAND: ${formatNumber(Math.round(demand))} TPS`;
+      texts[3].x = margin.left + (isMobile ? 20 : 45);
+      texts[3].y = capacityY + 38;
 
       // Utilization
+      texts[4].style.fontSize = bigValueFontSize;
       texts[4].text = `${Math.round(util)}%`;
-      const barPadding = 40;
+      const barPadding = isMobile ? 25 : 40;
       const barX = margin.left + barPadding;
       const barWidth = width - margin.left * 2 - barPadding * 2;
       const demandRatio = demand / CONFIG.aptosCapacity;
       texts[4].x = barX + 5 + (barWidth - 10) * demandRatio / 2;
-      texts[4].y = capacityY + 88;
+      texts[4].y = capacityY + 82;
       texts[4].anchor.set(0.5, 0.5);
 
       // Headroom label
-      texts[5].text = `${Math.round(100 - util)}% HEADROOM`;
-      texts[5].x = width - margin.right - 60;
+      texts[5].style.fontSize = labelFontSize;
+      texts[5].text = isMobile ? `${Math.round(100 - util)}% FREE` : `${Math.round(100 - util)}% HEADROOM`;
+      texts[5].x = width - margin.right - (isMobile ? 20 : 60);
       texts[5].y = capacityY + capacitySection - 25;
       texts[5].anchor.set(1, 0);
 
       // Aptos label
-      texts[6].x = aptosBoxX + 15;
-      texts[6].y = boxY + 12;
+      texts[6].style.fontSize = chainFontSize;
+      texts[6].x = aptosBoxX + 10;
+      texts[6].y = boxY + 10;
 
       // ETH label
-      texts[7].x = ethBoxX + 15;
-      texts[7].y = boxY + 12;
+      texts[7].style.fontSize = chainFontSize;
+      texts[7].text = isMobile ? "ETH (30 TPS)" : "ETH-STYLE (30 TPS)";
+      texts[7].x = ethBoxX + 10;
+      texts[7].y = boxY + 10;
 
       // Aptos fee
+      texts[8].style.fontSize = feeFontSize;
       texts[8].text = "$0.0001";
       texts[8].x = aptosBoxX + boxWidth / 2;
-      texts[8].y = boxY + 115;
+      texts[8].y = boxY + (isMobile ? 100 : 115);
       texts[8].anchor.set(0.5, 0.5);
 
       // ETH fee
+      texts[9].style.fontSize = feeFontSize;
       const ethUtil = demand / CONFIG.ethCapacity;
       const ethFee = ethUtil > 1 ? Math.min(ethUtil * 5, 200).toFixed(0) : "0.10";
       texts[9].text = `$${ethFee}+`;
       texts[9].x = ethBoxX + boxWidth / 2;
-      texts[9].y = boxY + 115;
+      texts[9].y = boxY + (isMobile ? 100 : 115);
       texts[9].anchor.set(0.5, 0.5);
       texts[9].style.fill = ethUtil > 1 ? PIXI_COLORS.danger : 0x6b7280;
 
       // Aptos status
-      texts[10].text = `${Math.round((demand / CONFIG.aptosCapacity) * 100)}% utilized`;
+      texts[10].style.fontSize = isMobile ? 9 : 10;
+      texts[10].text = `${Math.round((demand / CONFIG.aptosCapacity) * 100)}% used`;
       texts[10].x = aptosBoxX + boxWidth / 2;
-      texts[10].y = boxY + 70;
+      texts[10].y = boxY + (isMobile ? 60 : 70);
       texts[10].anchor.set(0.5, 0.5);
 
       // ETH status
+      texts[11].style.fontSize = isMobile ? 9 : 10;
       const ethPercent = Math.round((demand / CONFIG.ethCapacity) * 100);
-      texts[11].text = ethPercent > 100 ? `${ethPercent.toLocaleString()}% OVERLOADED` : `${ethPercent}% utilized`;
+      texts[11].text = ethPercent > 100 ? `${ethPercent.toLocaleString()}% OVER` : `${ethPercent}% used`;
       texts[11].x = ethBoxX + boxWidth / 2;
-      texts[11].y = boxY + 70;
+      texts[11].y = boxY + (isMobile ? 60 : 70);
       texts[11].anchor.set(0.5, 0.5);
       texts[11].style.fill = ethPercent > 100 ? PIXI_COLORS.danger : 0x9ca3af;
     }
