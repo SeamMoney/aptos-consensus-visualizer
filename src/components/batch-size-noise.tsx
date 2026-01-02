@@ -7,11 +7,7 @@ import { Minus, Plus, Pause, Play, RotateCcw } from "lucide-react";
 const BATCH_SIZES = [1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 1024];
 const BASE_NOISE = 2.0; // Noise at batch size 1
 const TRUE_GRADIENT = 1.0;
-
-interface DataPoint {
-  x: number;
-  y: number;
-}
+const MAX_POINTS = 150; // Number of points visible on screen
 
 export const BatchSizeNoise = memo(function BatchSizeNoise() {
   const containerRef = useRef<HTMLDivElement>(null);
@@ -21,7 +17,7 @@ export const BatchSizeNoise = memo(function BatchSizeNoise() {
 
   const [batchSizeIndex, setBatchSizeIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(true);
-  const [dataPoints, setDataPoints] = useState<DataPoint[]>([]);
+  const [dataPoints, setDataPoints] = useState<number[]>([]);
   const [currentDeviation, setCurrentDeviation] = useState(0);
 
   const batchSize = BATCH_SIZES[batchSizeIndex];
@@ -44,49 +40,44 @@ export const BatchSizeNoise = memo(function BatchSizeNoise() {
     return "STABLE";
   };
 
-  // Generate noisy gradient estimate
-  const generateNoisyGradient = useCallback(() => {
+  // Add new point with current noise level
+  const addPoint = useCallback(() => {
     const noise = (Math.random() - 0.5) * 2 * theoreticalNoise * 2;
-    return TRUE_GRADIENT + noise;
+    const newValue = TRUE_GRADIENT + noise;
+
+    setDataPoints((prev) => {
+      const updated = [...prev, newValue];
+      // Keep only the last MAX_POINTS
+      if (updated.length > MAX_POINTS) {
+        return updated.slice(-MAX_POINTS);
+      }
+      return updated;
+    });
   }, [theoreticalNoise]);
 
-  // Auto-increment batch size
+  // Continuous point addition
   useEffect(() => {
     if (!isPlaying || !isVisible) return;
 
     const interval = setInterval(() => {
-      setBatchSizeIndex((prev) => {
-        if (prev >= BATCH_SIZES.length - 1) {
-          return prev; // Stay at max
-        }
-        return prev + 1;
-      });
-    }, 2500);
+      addPoint();
+    }, 50); // Add a new point every 50ms
 
     return () => clearInterval(interval);
-  }, [isPlaying, isVisible]);
+  }, [isPlaying, isVisible, addPoint]);
 
-  // Generate data points
+  // Calculate current deviation from recent points
   useEffect(() => {
-    const points: DataPoint[] = [];
-    const numPoints = 100;
+    if (dataPoints.length < 10) return;
 
-    for (let i = 0; i < numPoints; i++) {
-      const noise = (Math.random() - 0.5) * 2 * theoreticalNoise * 2;
-      points.push({
-        x: i,
-        y: TRUE_GRADIENT + noise,
-      });
-    }
-
-    setDataPoints(points);
-
-    // Calculate actual standard deviation
-    const values = points.map((p) => p.y);
-    const mean = values.reduce((a, b) => a + b, 0) / values.length;
-    const variance = values.reduce((a, b) => a + Math.pow(b - mean, 2), 0) / values.length;
+    // Use last 30 points for deviation calculation
+    const recentPoints = dataPoints.slice(-30);
+    const mean = recentPoints.reduce((a, b) => a + b, 0) / recentPoints.length;
+    const variance =
+      recentPoints.reduce((a, b) => a + Math.pow(b - mean, 2), 0) /
+      recentPoints.length;
     setCurrentDeviation(Math.sqrt(variance));
-  }, [batchSize, theoreticalNoise]);
+  }, [dataPoints]);
 
   // Canvas rendering
   useEffect(() => {
@@ -97,7 +88,7 @@ export const BatchSizeNoise = memo(function BatchSizeNoise() {
     if (!ctx) return;
 
     let lastTime = 0;
-    const targetFPS = 30;
+    const targetFPS = 60; // Smooth animation
     const frameInterval = 1000 / targetFPS;
 
     const render = (timestamp: number) => {
@@ -136,10 +127,9 @@ export const BatchSizeNoise = memo(function BatchSizeNoise() {
       const chartWidth = chartRight - chartLeft;
       const chartHeight = chartBottom - chartTop;
 
-      // Y-axis range (dynamic based on noise level)
-      const maxDeviation = Math.max(theoreticalNoise * 3, 0.5);
-      const yMin = TRUE_GRADIENT - maxDeviation;
-      const yMax = TRUE_GRADIENT + maxDeviation;
+      // Y-axis range - fixed to show full noise range
+      const yMin = TRUE_GRADIENT - BASE_NOISE * 2.5;
+      const yMax = TRUE_GRADIENT + BASE_NOISE * 2.5;
 
       // Draw subtle grid
       ctx.strokeStyle = "rgba(255, 255, 255, 0.05)";
@@ -164,7 +154,8 @@ export const BatchSizeNoise = memo(function BatchSizeNoise() {
       }
 
       // Draw true gradient line (dashed)
-      const trueY = chartBottom - ((TRUE_GRADIENT - yMin) / (yMax - yMin)) * chartHeight;
+      const trueY =
+        chartBottom - ((TRUE_GRADIENT - yMin) / (yMax - yMin)) * chartHeight;
       ctx.strokeStyle = "rgba(0, 217, 165, 0.4)";
       ctx.lineWidth = 1;
       ctx.setLineDash([5, 5]);
@@ -178,38 +169,45 @@ export const BatchSizeNoise = memo(function BatchSizeNoise() {
       ctx.fillStyle = "rgba(0, 217, 165, 0.6)";
       ctx.font = "10px system-ui, sans-serif";
       ctx.textAlign = "right";
-      ctx.fillText(`True Gradient (${TRUE_GRADIENT.toFixed(1)})`, chartRight - 5, trueY - 8);
+      ctx.fillText(
+        `True Gradient (${TRUE_GRADIENT.toFixed(1)})`,
+        chartRight - 5,
+        trueY - 8
+      );
 
       // Draw noisy line
       if (dataPoints.length >= 2) {
+        // Draw glow effect first (behind)
+        ctx.beginPath();
+        ctx.strokeStyle = "rgba(59, 130, 246, 0.2)";
+        ctx.lineWidth = 8;
+        ctx.lineCap = "round";
+        ctx.lineJoin = "round";
+
+        for (let i = 0; i < dataPoints.length; i++) {
+          const x = chartLeft + (i / (MAX_POINTS - 1)) * chartWidth;
+          const clampedY = Math.max(yMin, Math.min(yMax, dataPoints[i]));
+          const y =
+            chartBottom - ((clampedY - yMin) / (yMax - yMin)) * chartHeight;
+
+          if (i === 0) {
+            ctx.moveTo(x, y);
+          } else {
+            ctx.lineTo(x, y);
+          }
+        }
+        ctx.stroke();
+
+        // Draw main line
         ctx.beginPath();
         ctx.strokeStyle = "#3b82f6";
         ctx.lineWidth = 2;
 
         for (let i = 0; i < dataPoints.length; i++) {
-          const point = dataPoints[i];
-          const x = chartLeft + (point.x / (dataPoints.length - 1)) * chartWidth;
-          const clampedY = Math.max(yMin, Math.min(yMax, point.y));
-          const y = chartBottom - ((clampedY - yMin) / (yMax - yMin)) * chartHeight;
-
-          if (i === 0) {
-            ctx.moveTo(x, y);
-          } else {
-            ctx.lineTo(x, y);
-          }
-        }
-
-        ctx.stroke();
-
-        // Draw glow effect
-        ctx.strokeStyle = "rgba(59, 130, 246, 0.3)";
-        ctx.lineWidth = 6;
-        ctx.beginPath();
-        for (let i = 0; i < dataPoints.length; i++) {
-          const point = dataPoints[i];
-          const x = chartLeft + (point.x / (dataPoints.length - 1)) * chartWidth;
-          const clampedY = Math.max(yMin, Math.min(yMax, point.y));
-          const y = chartBottom - ((clampedY - yMin) / (yMax - yMin)) * chartHeight;
+          const x = chartLeft + (i / (MAX_POINTS - 1)) * chartWidth;
+          const clampedY = Math.max(yMin, Math.min(yMax, dataPoints[i]));
+          const y =
+            chartBottom - ((clampedY - yMin) / (yMax - yMin)) * chartHeight;
 
           if (i === 0) {
             ctx.moveTo(x, y);
@@ -219,22 +217,30 @@ export const BatchSizeNoise = memo(function BatchSizeNoise() {
         }
         ctx.stroke();
 
-        // Current point indicator
-        const lastPoint = dataPoints[dataPoints.length - 1];
-        const lastX = chartRight;
-        const lastClampedY = Math.max(yMin, Math.min(yMax, lastPoint.y));
-        const lastY = chartBottom - ((lastClampedY - yMin) / (yMax - yMin)) * chartHeight;
+        // Current point indicator (at the end)
+        if (dataPoints.length > 0) {
+          const lastIdx = dataPoints.length - 1;
+          const lastX = chartLeft + (lastIdx / (MAX_POINTS - 1)) * chartWidth;
+          const lastClampedY = Math.max(
+            yMin,
+            Math.min(yMax, dataPoints[lastIdx])
+          );
+          const lastY =
+            chartBottom -
+            ((lastClampedY - yMin) / (yMax - yMin)) * chartHeight;
 
-        ctx.beginPath();
-        ctx.fillStyle = "#3b82f6";
-        ctx.arc(lastX, lastY, 4, 0, Math.PI * 2);
-        ctx.fill();
+          // Outer glow
+          ctx.beginPath();
+          ctx.fillStyle = "rgba(59, 130, 246, 0.3)";
+          ctx.arc(lastX, lastY, 10, 0, Math.PI * 2);
+          ctx.fill();
 
-        // Outer glow
-        ctx.beginPath();
-        ctx.fillStyle = "rgba(59, 130, 246, 0.3)";
-        ctx.arc(lastX, lastY, 8, 0, Math.PI * 2);
-        ctx.fill();
+          // Inner dot
+          ctx.beginPath();
+          ctx.fillStyle = "#3b82f6";
+          ctx.arc(lastX, lastY, 4, 0, Math.PI * 2);
+          ctx.fill();
+        }
       }
 
       // Y-axis label
@@ -254,7 +260,7 @@ export const BatchSizeNoise = memo(function BatchSizeNoise() {
     animationRef.current = requestAnimationFrame(render);
 
     return () => cancelAnimationFrame(animationRef.current);
-  }, [dataPoints, isVisible, theoreticalNoise]);
+  }, [dataPoints, isVisible]);
 
   const handleDecrease = () => {
     setBatchSizeIndex((prev) => Math.max(0, prev - 1));
@@ -266,6 +272,7 @@ export const BatchSizeNoise = memo(function BatchSizeNoise() {
 
   const handleReset = () => {
     setBatchSizeIndex(0);
+    setDataPoints([]);
     setIsPlaying(true);
   };
 
@@ -299,7 +306,7 @@ export const BatchSizeNoise = memo(function BatchSizeNoise() {
           </span>
           <button
             onClick={handleDecrease}
-            className="w-7 h-7 rounded flex items-center justify-center transition-colors"
+            className="w-7 h-7 rounded flex items-center justify-center transition-colors hover:bg-opacity-80"
             style={{
               background: "var(--bg-surface)",
               border: "1px solid var(--border-default)",
@@ -316,7 +323,7 @@ export const BatchSizeNoise = memo(function BatchSizeNoise() {
           </span>
           <button
             onClick={handleIncrease}
-            className="w-7 h-7 rounded flex items-center justify-center transition-colors"
+            className="w-7 h-7 rounded flex items-center justify-center transition-colors hover:bg-opacity-80"
             style={{
               background: "var(--bg-surface)",
               border: "1px solid var(--border-default)",
@@ -325,10 +332,13 @@ export const BatchSizeNoise = memo(function BatchSizeNoise() {
           >
             <Plus size={14} />
           </button>
-          <div className="w-px h-5 mx-1" style={{ background: "var(--border-default)" }} />
+          <div
+            className="w-px h-5 mx-1"
+            style={{ background: "var(--border-default)" }}
+          />
           <button
             onClick={togglePlay}
-            className="w-7 h-7 rounded flex items-center justify-center transition-colors"
+            className="w-7 h-7 rounded flex items-center justify-center transition-colors hover:bg-opacity-80"
             style={{
               background: "var(--bg-surface)",
               border: "1px solid var(--border-default)",
@@ -339,7 +349,7 @@ export const BatchSizeNoise = memo(function BatchSizeNoise() {
           </button>
           <button
             onClick={handleReset}
-            className="w-7 h-7 rounded flex items-center justify-center transition-colors"
+            className="w-7 h-7 rounded flex items-center justify-center transition-colors hover:bg-opacity-80"
             style={{
               background: "var(--bg-surface)",
               border: "1px solid var(--border-default)",
@@ -365,34 +375,55 @@ export const BatchSizeNoise = memo(function BatchSizeNoise() {
           <div className="mt-4">
             <div
               className="flex items-center justify-between px-3 py-2 rounded-full text-[10px] font-semibold tracking-wider"
-              style={{ background: "var(--bg-surface)", border: "1px solid var(--border-subtle)" }}
+              style={{
+                background: "var(--bg-surface)",
+                border: "1px solid var(--border-subtle)",
+              }}
             >
               <span
-                style={{ color: getStageLabel() === "STOCHASTIC" ? "var(--accent)" : "var(--chrome-500)" }}
+                style={{
+                  color:
+                    getStageLabel() === "STOCHASTIC"
+                      ? "var(--accent)"
+                      : "var(--chrome-500)",
+                }}
               >
                 STOCHASTIC
               </span>
               <span
-                style={{ color: getStageLabel() === "BATCH SIZE" ? "var(--accent)" : "var(--chrome-500)" }}
+                style={{
+                  color:
+                    getStageLabel() === "BATCH SIZE"
+                      ? "var(--accent)"
+                      : "var(--chrome-500)",
+                }}
               >
                 BATCH SIZE
               </span>
               <span
-                style={{ color: getStageLabel() === "STABLE" ? "var(--accent)" : "var(--chrome-500)" }}
+                style={{
+                  color:
+                    getStageLabel() === "STABLE"
+                      ? "var(--accent)"
+                      : "var(--chrome-500)",
+                }}
               >
                 STABLE
               </span>
             </div>
-            <div className="relative mt-2 h-1.5 rounded-full overflow-hidden" style={{ background: "var(--bg-surface)" }}>
+            <div
+              className="relative mt-2 h-1.5 rounded-full overflow-hidden"
+              style={{ background: "var(--bg-surface)" }}
+            >
               <div
-                className="absolute left-0 top-0 h-full rounded-full transition-all duration-500"
+                className="absolute left-0 top-0 h-full rounded-full transition-all duration-300"
                 style={{
                   width: `${progress * 100}%`,
                   background: "linear-gradient(90deg, var(--accent), #3b82f6)",
                 }}
               />
               <div
-                className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full transition-all duration-500"
+                className="absolute top-1/2 -translate-y-1/2 w-3 h-3 rounded-full transition-all duration-300"
                 style={{
                   left: `calc(${progress * 100}% - 6px)`,
                   background: "var(--accent)",
@@ -408,22 +439,34 @@ export const BatchSizeNoise = memo(function BatchSizeNoise() {
           {/* Theoretical Noise */}
           <div
             className="p-4 rounded-lg"
-            style={{ background: "var(--bg-surface)", border: "1px solid var(--border-subtle)" }}
+            style={{
+              background: "var(--bg-surface)",
+              border: "1px solid var(--border-subtle)",
+            }}
           >
-            <div className="text-[10px] font-medium tracking-wider mb-1" style={{ color: "var(--chrome-500)" }}>
+            <div
+              className="text-[10px] font-medium tracking-wider mb-1"
+              style={{ color: "var(--chrome-500)" }}
+            >
               THEORETICAL NOISE (σ)
             </div>
             <div className="flex items-baseline gap-2">
-              <span className="text-2xl font-mono font-bold" style={{ color: "var(--accent)" }}>
+              <span
+                className="text-2xl font-mono font-bold"
+                style={{ color: "var(--accent)" }}
+              >
                 {theoreticalNoise.toFixed(3)}
               </span>
               <span className="text-xs" style={{ color: "var(--chrome-500)" }}>
                 ∝ 1/√B
               </span>
             </div>
-            <div className="mt-2 h-1 rounded-full overflow-hidden" style={{ background: "var(--bg-elevated)" }}>
+            <div
+              className="mt-2 h-1 rounded-full overflow-hidden"
+              style={{ background: "var(--bg-elevated)" }}
+            >
               <div
-                className="h-full rounded-full transition-all duration-500"
+                className="h-full rounded-full transition-all duration-300"
                 style={{
                   width: `${Math.min(100, (theoreticalNoise / BASE_NOISE) * 100)}%`,
                   background: "var(--accent)",
@@ -435,15 +478,27 @@ export const BatchSizeNoise = memo(function BatchSizeNoise() {
           {/* Current Deviation */}
           <div
             className="p-4 rounded-lg"
-            style={{ background: "var(--bg-surface)", border: "1px solid var(--border-subtle)" }}
+            style={{
+              background: "var(--bg-surface)",
+              border: "1px solid var(--border-subtle)",
+            }}
           >
-            <div className="text-[10px] font-medium tracking-wider mb-1" style={{ color: "var(--chrome-500)" }}>
+            <div
+              className="text-[10px] font-medium tracking-wider mb-1"
+              style={{ color: "var(--chrome-500)" }}
+            >
               CURRENT DEVIATION
             </div>
-            <div className="text-2xl font-mono font-bold" style={{ color: "var(--chrome-100)" }}>
+            <div
+              className="text-2xl font-mono font-bold"
+              style={{ color: "var(--chrome-100)" }}
+            >
               {currentDeviation.toFixed(3)}
             </div>
-            <div className="text-xs mt-1" style={{ color: "var(--chrome-500)" }}>
+            <div
+              className="text-xs mt-1"
+              style={{ color: "var(--chrome-500)" }}
+            >
               {getNoiseDescription()}
             </div>
           </div>
@@ -458,17 +513,29 @@ export const BatchSizeNoise = memo(function BatchSizeNoise() {
           >
             <div className="flex items-center gap-2 mb-2">
               <span style={{ color: "var(--accent)" }}>ⓘ</span>
-              <span className="text-xs font-semibold" style={{ color: "var(--accent)" }}>
+              <span
+                className="text-xs font-semibold"
+                style={{ color: "var(--accent)" }}
+              >
                 Key Insight
               </span>
             </div>
-            <p className="text-xs leading-relaxed" style={{ color: "var(--chrome-300)" }}>
-              Increasing batch size <strong style={{ color: "var(--chrome-100)" }}>B</strong> reduces
-              gradient noise by <strong style={{ color: "var(--chrome-100)" }}>√B</strong>.
+            <p
+              className="text-xs leading-relaxed"
+              style={{ color: "var(--chrome-300)" }}
+            >
+              Increasing batch size{" "}
+              <strong style={{ color: "var(--chrome-100)" }}>B</strong> reduces
+              gradient noise by{" "}
+              <strong style={{ color: "var(--chrome-100)" }}>√B</strong>.
             </p>
-            <p className="text-xs leading-relaxed mt-2" style={{ color: "var(--chrome-500)" }}>
-              To use large batches effectively, you often need to increase the Learning Rate linearly
-              or by square root to compensate for the reduced noise/variance distribution.
+            <p
+              className="text-xs leading-relaxed mt-2"
+              style={{ color: "var(--chrome-500)" }}
+            >
+              To use large batches effectively, you often need to increase the
+              Learning Rate linearly or by square root to compensate for the
+              reduced noise/variance distribution.
             </p>
           </div>
         </div>
