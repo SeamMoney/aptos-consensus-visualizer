@@ -67,11 +67,13 @@ export function formatNumber(n: number): string {
 
 // Format currency with appropriate precision - more granular for small values
 export function formatFee(n: number): string {
-  if (n < 0.00001) return `$${n.toFixed(7)}`;
-  if (n < 0.0001) return `$${n.toFixed(6)}`;
-  if (n < 0.001) return `$${n.toFixed(5)}`; // Show 5 decimals for sub-penny fees
-  if (n < 0.01) return `$${n.toFixed(4)}`;
-  if (n < 1) return `$${n.toFixed(3)}`;
+  // Protect against NaN/Infinity
+  if (!isFinite(n) || isNaN(n)) return '$0.00';
+  if (n < 0.00001) return `$${n.toFixed(6)}`;
+  if (n < 0.0001) return `$${n.toFixed(5)}`;
+  if (n < 0.001) return `$${n.toFixed(4)}`;
+  if (n < 0.01) return `$${n.toFixed(3)}`;
+  if (n < 1) return `$${n.toFixed(2)}`;
   if (n < 10) return `$${n.toFixed(2)}`;
   return `$${n.toFixed(1)}`;
 }

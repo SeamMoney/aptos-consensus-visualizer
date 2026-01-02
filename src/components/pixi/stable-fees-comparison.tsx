@@ -177,7 +177,13 @@ const calculateChainFee = (
 
   // Smooth transition with responsive movement
   const smoothing = chainKey === 'monad' ? 0.05 : 0.12;
-  return lerp(prevFee, targetFee, smoothing);
+  const result = lerp(prevFee, targetFee, smoothing);
+
+  // Protect against NaN - fallback to base fee
+  if (!isFinite(result) || isNaN(result)) {
+    return chain.baseFee;
+  }
+  return result;
 };
 
 // Aptos fee calculation with contention and capacity pressure
@@ -328,11 +334,12 @@ const isChainCongested = (chainKey: ChainKey, demand: number): { congested: bool
 
 // Format dynamic Y-axis labels with more precision for small values
 const formatYAxisLabel = (value: number): string => {
+  if (!isFinite(value) || isNaN(value)) return '$0';
   if (value >= 10) return `$${value.toFixed(0)}`;
   if (value >= 1) return `$${value.toFixed(1)}`;
   if (value >= 0.01) return `$${value.toFixed(2)}`;
-  if (value >= 0.001) return `$${value.toFixed(4)}`;
-  return `$${value.toFixed(5)}`;
+  if (value >= 0.001) return `$${value.toFixed(3)}`;
+  return `$${value.toFixed(4)}`;
 };
 
 type ChainKey = keyof typeof CHAINS;
@@ -562,8 +569,9 @@ export const StableFeesComparison = memo(function StableFeesComparison({
     // Store data points
     leftDataRef.current.push({ time: elapsed, fee: chainFee });
     rightDataRef.current.push({ time: elapsed, fee: aptFee });
-    if (leftDataRef.current.length > 200) leftDataRef.current.shift();
-    if (rightDataRef.current.length > 200) rightDataRef.current.shift();
+    // Keep more history for wider charts (400 points)
+    if (leftDataRef.current.length > 400) leftDataRef.current.shift();
+    if (rightDataRef.current.length > 400) rightDataRef.current.shift();
 
     // Throttle state updates
     if (now - lastStateUpdateRef.current > CONFIG.stateUpdateInterval) {
@@ -602,9 +610,9 @@ export const StableFeesComparison = memo(function StableFeesComparison({
         setLeftYAxisLabels(newLeftLabels);
       }
 
-      // Fixed Y-axis labels for Aptos to show stability (zoomed out view)
+      // Zoomed in Y-axis labels for Aptos
       const currentScenario = SCENARIOS[selectedScenarioRef.current];
-      const rightYMax = currentScenario.aptosContention > 0.2 ? 0.015 : 0.01;
+      const rightYMax = currentScenario.aptosContention > 0.2 ? 0.008 : currentScenario.aptosContention > 0 ? 0.003 : 0.0015;
       const newRightLabels = [
         formatYAxisLabel(rightYMax),
         formatYAxisLabel(rightYMax * 0.67),
@@ -719,8 +727,9 @@ export const StableFeesComparison = memo(function StableFeesComparison({
       const yMax = dataMax + padding;
 
       // Draw chart area
-      const chartInnerX = margin + 60;
-      const chartInnerWidth = chartWidth - 70;
+      // Narrower Y-axis labels (40px) for more chart width
+      const chartInnerX = margin + 40;
+      const chartInnerWidth = chartWidth - 50;
       const chartInnerTop = chartTop + 40;
       const chartInnerHeight = chartHeight - 55;
 
@@ -791,16 +800,18 @@ export const StableFeesComparison = memo(function StableFeesComparison({
       rightChart.roundRect(halfWidth + margin - 2, chartTop - 2, chartWidth + 4, chartHeight + 4, 10);
       rightChart.stroke({ width: 2, color: APTOS.color, alpha: 0.15 });
 
-      // Fixed wider Y-axis scale for Aptos to show stability
-      // Range from $0 to $0.01 so small variations look appropriately flat
-      // In extreme mode, extend to $0.015 to accommodate higher fees
+      // Zoomed in Y-axis for Aptos - shows small fee variations clearly
+      // Normal: $0 to $0.0015 (fees ~$0.0005 at 1/3 height)
+      // Stress: $0 to $0.003
+      // Extreme: $0 to $0.008
       const scenario = SCENARIOS[selectedScenarioRef.current];
       const aptosYMin = 0;
-      const aptosYMax = scenario.aptosContention > 0.2 ? 0.015 : 0.01; // Wider view to show stability
+      const aptosYMax = scenario.aptosContention > 0.2 ? 0.008 : scenario.aptosContention > 0 ? 0.003 : 0.0015;
 
       // Draw chart area
-      const chartInnerX = halfWidth + margin + 60;
-      const chartInnerWidth = chartWidth - 70;
+      // Narrower Y-axis labels (40px) for more chart width
+      const chartInnerX = halfWidth + margin + 40;
+      const chartInnerWidth = chartWidth - 50;
       const chartInnerTop = chartTop + 40;
       const chartInnerHeight = chartHeight - 55;
 
@@ -1272,10 +1283,10 @@ export const StableFeesComparison = memo(function StableFeesComparison({
                 className="absolute pointer-events-none text-right"
                 style={{
                   top: 115 + i * 63,
-                  left: 22,
-                  width: 50,
+                  left: 18,
+                  width: 38,
                   color: '#6b7280',
-                  fontSize: '10px',
+                  fontSize: '8px',
                 }}
               >
                 {label}
@@ -1300,10 +1311,10 @@ export const StableFeesComparison = memo(function StableFeesComparison({
                 className="absolute pointer-events-none text-right"
                 style={{
                   top: 115 + i * 63,
-                  left: 'calc(50% + 22px)',
-                  width: 55,
+                  left: 'calc(50% + 18px)',
+                  width: 40,
                   color: '#6b7280',
-                  fontSize: '10px',
+                  fontSize: '8px',
                 }}
               >
                 {label}
