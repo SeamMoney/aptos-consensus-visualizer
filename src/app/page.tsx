@@ -22,6 +22,15 @@ import { LoaderV2Parallel } from "@/components/loader-v2-parallel";
 import { LoaderV2Caching } from "@/components/loader-v2-caching";
 import { ArchonConsensus } from "@/components/archon-consensus";
 import { ConsensusEvolution } from "@/components/consensus-evolution";
+import {
+  StableFeesStress,
+  StableFeesComparison,
+  OrderbookStress,
+  OrderbookComparison,
+  BlockSTMExplainer,
+  FeeMarketExplainer,
+  PerpDexScenario,
+} from "@/components/pixi";
 import { useAptosStream } from "@/hooks/useAptosStream";
 import { LearnMoreLink } from "@/components/ui/tooltip";
 import { NetworkSelector } from "@/components/network-selector";
@@ -217,6 +226,55 @@ export default function Home() {
         {/* Consensus Observer */}
         <section className="mb-4">
           <ConsensusObserver />
+        </section>
+
+        {/* Gas Fees Section Header */}
+        <div id="gas-fees" className="mb-4 pt-6 border-t border-white/5 scroll-mt-4">
+          <div className="flex items-center gap-2 mb-2">
+            <span className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold" style={{ backgroundColor: "#F59E0B", color: "#000" }}>5</span>
+            <h2 className="text-sm font-semibold tracking-wide" style={{ color: "var(--chrome-200)" }}>
+              GAS FEES: Stable Under Load
+              <LearnMoreLink href="https://aptos.dev/concepts/gas-txn-fee" label="Aptos Gas & Fees" />
+            </h2>
+          </div>
+          <p className="text-xs ml-8" style={{ color: "var(--chrome-500)" }}>
+            Fee auction models can spike dramatically during demand surges. Aptos uses governance-set pricing&mdash;no gas wars, no priority auctions, just predictable fees regardless of network load.
+          </p>
+        </div>
+
+        {/* Orderbook Stress Test - Polymarket Election Night */}
+        <section className="mb-4">
+          <OrderbookStress />
+        </section>
+
+        {/* Chain Comparison - Same Load Different Outcomes */}
+        <section className="mb-4">
+          <OrderbookComparison />
+        </section>
+
+        {/* Block-STM Parallel Execution Explainer */}
+        <section className="mb-4">
+          <BlockSTMExplainer />
+        </section>
+
+        {/* Fee Market Economics Explainer */}
+        <section className="mb-4">
+          <FeeMarketExplainer />
+        </section>
+
+        {/* Perp DEX Flash Crash Scenario */}
+        <section className="mb-4">
+          <PerpDexScenario />
+        </section>
+
+        {/* Stable Fees Under Stress (Legacy) */}
+        <section className="mb-4">
+          <StableFeesStress />
+        </section>
+
+        {/* Fee Comparison: Solana vs Aptos (Legacy) */}
+        <section className="mb-4">
+          <StableFeesComparison />
         </section>
 
         {/* Footer - Minimal */}

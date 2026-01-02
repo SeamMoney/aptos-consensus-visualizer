@@ -23,6 +23,12 @@ export interface BlockStats {
   timestamp: number;
   blockTimeMs: number; // Time since previous block
   gasUsed: number;
+  // Consensus metadata (from block_metadata_transaction)
+  proposer?: string;
+  round?: number;
+  epoch?: number;
+  votesBitvec?: string;
+  failedProposers?: number[];
 }
 
 export async function getLedgerInfo(): Promise<LedgerInfo> {

@@ -7,26 +7,34 @@ export type Network = "mainnet" | "testnet";
 interface NetworkContextType {
   network: Network;
   setNetwork: (network: Network) => void;
-  apiUrl: string;
-  apiKey: string;
+  apiBase: string;
   wsEndpoints: string[];
 }
 
-const NETWORK_CONFIG: Record<Network, { apiUrl: string; apiKey: string; wsEndpoints: string[] }> = {
+const MAINNET_WS = (process.env.NEXT_PUBLIC_APTOS_WS_MAINNET || "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
+const TESTNET_WS = (process.env.NEXT_PUBLIC_APTOS_WS_TESTNET || "")
+  .split(",")
+  .map((value) => value.trim())
+  .filter(Boolean);
+
+const NETWORK_CONFIG: Record<Network, { wsEndpoints: string[] }> = {
   mainnet: {
-    apiUrl: "https://api.mainnet.aptoslabs.com/v1",
-    apiKey: "AG-PBRRDTVTGPEDATI1NHY3UANNUYSKBPJMA",
-    wsEndpoints: [
-      "wss://aptos.dorafactory.org/mainnet-ws/",
-      "wss://fullnode.mainnet.aptoslabs.com/v1/stream",
-    ],
+    wsEndpoints:
+      MAINNET_WS.length > 0
+        ? MAINNET_WS
+        : [
+            "wss://aptos.dorafactory.org/mainnet-ws/",
+            "wss://fullnode.mainnet.aptoslabs.com/v1/stream",
+          ],
   },
   testnet: {
-    apiUrl: "https://api.testnet.aptoslabs.com/v1",
-    apiKey: "AG-8SQJ7EMFK4CAWWPKLLFODSO7WQGFTDA1C",
-    wsEndpoints: [
-      "wss://fullnode.testnet.aptoslabs.com/v1/stream",
-    ],
+    wsEndpoints:
+      TESTNET_WS.length > 0
+        ? TESTNET_WS
+        : ["wss://fullnode.testnet.aptoslabs.com/v1/stream"],
   },
 };
 
@@ -46,8 +54,7 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
       value={{
         network,
         setNetwork,
-        apiUrl: config.apiUrl,
-        apiKey: config.apiKey,
+        apiBase: "/api/aptos",
         wsEndpoints: config.wsEndpoints,
       }}
     >

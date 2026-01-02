@@ -54,37 +54,51 @@ export interface AptosStats {
   consensus: ConsensusStats | null;
 }
 
-// Get headers with API key
-function getHeaders(apiKey: string): HeadersInit {
-  return { "Authorization": `Bearer ${apiKey}` };
-}
-
 // Fetch block with transactions
-async function fetchBlock(apiUrl: string, height: number, apiKey: string) {
+async function fetchBlock(apiBase: string, network: Network, height: number) {
   const res = await fetch(
-    `${apiUrl}/blocks/by_height/${height}?with_transactions=true`,
-    { headers: getHeaders(apiKey), cache: 'no-store' }
+    `${apiBase}/block?network=${network}&height=${height}`,
+    { cache: "no-store" }
   );
+  if (res.status === 429) {
+    const retryAfter = parseInt(res.headers.get("Retry-After") || "30");
+    throw new RateLimitError(retryAfter);
+  }
   if (!res.ok) return null;
   return res.json();
 }
 
+// Custom error for rate limiting
+class RateLimitError extends Error {
+  retryAfter: number;
+  constructor(retryAfter: number) {
+    super('Rate limited');
+    this.retryAfter = retryAfter;
+  }
+}
+
 // Fetch ledger info
-async function fetchLedgerInfo(apiUrl: string, apiKey: string) {
-  const res = await fetch(apiUrl, {
-    headers: getHeaders(apiKey),
-    cache: 'no-store',
+async function fetchLedgerInfo(apiBase: string, network: Network) {
+  const res = await fetch(`${apiBase}/ledger?network=${network}`, {
+    cache: "no-store",
   });
+  if (res.status === 429) {
+    const retryAfter = parseInt(res.headers.get("Retry-After") || "30");
+    throw new RateLimitError(retryAfter);
+  }
   if (!res.ok) return null;
   return res.json();
 }
 
 // Fetch validator set for current epoch
-async function fetchValidatorSet(apiUrl: string, apiKey: string) {
-  const res = await fetch(
-    `${apiUrl}/accounts/0x1/resource/0x1::stake::ValidatorSet`,
-    { headers: getHeaders(apiKey), cache: 'no-store' }
-  );
+async function fetchValidatorSet(apiBase: string, network: Network) {
+  const res = await fetch(`${apiBase}/validators?network=${network}`, {
+    cache: "no-store",
+  });
+  if (res.status === 429) {
+    const retryAfter = parseInt(res.headers.get("Retry-After") || "30");
+    throw new RateLimitError(retryAfter);
+  }
   if (!res.ok) return null;
   return res.json();
 }
@@ -186,7 +200,7 @@ function parseVoteBitvec(bitvec: string, validators: ValidatorInfo[]): { partici
 }
 
 export function useAptosStream() {
-  const { network, apiUrl, apiKey, wsEndpoints } = useNetwork();
+  const { network, apiBase, wsEndpoints } = useNetwork();
 
   const [stats, setStats] = useState<AptosStats>({
     blockHeight: 0,
@@ -207,10 +221,14 @@ export function useAptosStream() {
   const lastValidatorFetchRef = useRef<number>(0);
   const recentProposersRef = useRef<string[]>([]);
 
+  const defaultPollMs = parseInt(process.env.NEXT_PUBLIC_APTOS_POLL_MS || "500");
+
   // Error recovery refs
   const errorCountRef = useRef<number>(0);
   const lastSuccessTimeRef = useRef<number>(Date.now());
   const isPollingRef = useRef<boolean>(false);
+  const rateLimitedUntilRef = useRef<number>(0);
+  const baseIntervalRef = useRef<number>(defaultPollMs);
 
   // Calculate stats from blocks
   const updateStats = useCallback(() => {
@@ -290,14 +308,16 @@ export function useAptosStream() {
     updateStats();
   }, [updateStats]);
 
-  // Fetch and update validator set (call less frequently)
+  // Fetch and update validator set (called on a separate timer, not every poll)
   const fetchValidators = useCallback(async () => {
     const now = Date.now();
-    // Only fetch every 30 seconds
-    if (now - lastValidatorFetchRef.current < 30000) return;
+    // Only fetch every 60 seconds to reduce API calls
+    if (now - lastValidatorFetchRef.current < 60000) return;
+    // Don't fetch if rate limited
+    if (now < rateLimitedUntilRef.current) return;
 
     try {
-      const validatorSet = await fetchValidatorSet(apiUrl, apiKey);
+      const validatorSet = await fetchValidatorSet(apiBase, network);
       if (!validatorSet?.data?.active_validators) return;
 
       const validators: ValidatorInfo[] = validatorSet.data.active_validators.map((v: any) => ({
@@ -312,11 +332,14 @@ export function useAptosStream() {
       validatorsRef.current = validators;
       lastValidatorFetchRef.current = now;
     } catch (e) {
-      console.error('Validator fetch error:', e);
+      if (e instanceof RateLimitError) {
+        rateLimitedUntilRef.current = Date.now() + e.retryAfter * 1000;
+      }
+      // Silently ignore validator fetch errors - not critical
     }
-  }, [apiUrl, apiKey]);
+  }, [apiBase, network]);
 
-  // Fast polling with API key (primary method - most reliable)
+  // Polling with rate limit handling
   const startPolling = useCallback(() => {
     if (pollIntervalRef.current) return;
     if (isPollingRef.current) return;
@@ -324,13 +347,19 @@ export function useAptosStream() {
     const poll = async () => {
       // Prevent concurrent polls
       if (isPollingRef.current) return;
+
+      // Check if we're rate limited
+      const now = Date.now();
+      if (now < rateLimitedUntilRef.current) {
+        const waitTime = Math.ceil((rateLimitedUntilRef.current - now) / 1000);
+        setError(`Rate limited. Retrying in ${waitTime}s...`);
+        return;
+      }
+
       isPollingRef.current = true;
 
       try {
-        // Fetch validators periodically
-        fetchValidators();
-
-        const ledger = await fetchLedgerInfo(apiUrl, apiKey);
+        const ledger = await fetchLedgerInfo(apiBase, network);
         if (!ledger) {
           throw new Error('Failed to fetch ledger info');
         }
@@ -339,9 +368,9 @@ export function useAptosStream() {
 
         // Initial load or catch up
         if (lastBlockRef.current === 0) {
-          // Fetch smaller initial batch (10 blocks instead of 30) for faster load
-          const heights = Array.from({ length: 10 }, (_, i) => currentHeight - i);
-          const blocks = await Promise.all(heights.map(h => fetchBlock(apiUrl, h, apiKey)));
+          // Fetch smaller initial batch (5 blocks) to reduce API calls
+          const heights = Array.from({ length: 5 }, (_, i) => currentHeight - i);
+          const blocks = await Promise.all(heights.map(h => fetchBlock(apiBase, network, h)));
 
           for (let i = 0; i < blocks.length; i++) {
             const block = blocks[i];
@@ -375,11 +404,11 @@ export function useAptosStream() {
           lastBlockRef.current = currentHeight;
         }
 
-        // Fetch only new blocks
+        // Fetch only new blocks (limit to 3 at a time)
         if (currentHeight > lastBlockRef.current) {
-          const newCount = Math.min(currentHeight - lastBlockRef.current, 10);
+          const newCount = Math.min(currentHeight - lastBlockRef.current, 3);
           const heights = Array.from({ length: newCount }, (_, i) => currentHeight - i);
-          const blocks = await Promise.all(heights.map(h => fetchBlock(apiUrl, h, apiKey)));
+          const blocks = await Promise.all(heights.map(h => fetchBlock(apiBase, network, h)));
 
           for (let i = 0; i < blocks.length; i++) {
             const block = blocks[i];
@@ -412,51 +441,65 @@ export function useAptosStream() {
           lastBlockRef.current = currentHeight;
         }
 
-        // Success! Reset error state
+        // Success! Reset error state and reduce interval
         errorCountRef.current = 0;
         lastSuccessTimeRef.current = Date.now();
+        baseIntervalRef.current = defaultPollMs;
         setConnected(true);
         setError(null);
 
+        // Fetch validators after successful connection (throttled internally)
+        fetchValidators();
+
       } catch (e) {
-        console.error('Poll error:', e);
-        errorCountRef.current++;
-
-        // After 3 consecutive errors, mark as disconnected
-        if (errorCountRef.current >= 3) {
+        // Handle rate limiting specially
+        if (e instanceof RateLimitError) {
+          const waitMs = e.retryAfter * 1000;
+          rateLimitedUntilRef.current = Date.now() + waitMs;
+          baseIntervalRef.current = Math.max(baseIntervalRef.current, 2000); // At least 2s between polls
+          setError(`Rate limited. Waiting ${e.retryAfter}s...`);
           setConnected(false);
-          setError('Connection lost. Retrying...');
-        }
+        } else {
+          console.error('Poll error:', e);
+          errorCountRef.current++;
 
-        // Exponential backoff on errors (max 5 seconds)
-        const backoffMs = Math.min(errorCountRef.current * 500, 5000);
-        await new Promise(r => setTimeout(r, backoffMs));
+          // After 3 consecutive errors, mark as disconnected
+          if (errorCountRef.current >= 3) {
+            setConnected(false);
+            setError('Connection issues. Retrying...');
+          }
+
+          // Exponential backoff on errors (max 10 seconds)
+          baseIntervalRef.current = Math.min(baseIntervalRef.current * 1.5, 10000);
+        }
       } finally {
         isPollingRef.current = false;
       }
     };
 
-    // Start polling
-    poll();
+    // Start polling with adaptive interval
+    const runPoll = () => {
+      poll().then(() => {
+        // Schedule next poll with current interval
+        pollIntervalRef.current = setTimeout(runPoll, baseIntervalRef.current);
+      });
+    };
 
-    // Poll every 500ms (reduced from 200ms for better performance)
-    pollIntervalRef.current = setInterval(poll, 500);
+    // Initial poll after short delay
+    pollIntervalRef.current = setTimeout(runPoll, 500);
 
-    // Also check for stale data periodically
+    // Stale data check every 5 seconds
     const staleCheckInterval = setInterval(() => {
       const timeSinceLastSuccess = Date.now() - lastSuccessTimeRef.current;
-      if (timeSinceLastSuccess > 10000) {
-        // No successful update in 10 seconds
-        setConnected(false);
+      if (timeSinceLastSuccess > 15000 && Date.now() >= rateLimitedUntilRef.current) {
         setError('Data may be stale. Reconnecting...');
       }
-    }, 2000);
+    }, 5000);
 
-    // Store the stale check interval for cleanup
     return () => {
       clearInterval(staleCheckInterval);
     };
-  }, [addBlock, fetchValidators, apiUrl, apiKey]);
+  }, [addBlock, fetchValidators, apiBase, network, defaultPollMs]);
 
   // WebSocket connection (experimental - for true real-time)
   const connectWebSocket = useCallback(() => {
@@ -490,7 +533,7 @@ export function useAptosStream() {
           if (data.params?.result?.block_height) {
             const height = parseInt(data.params.result.block_height);
             // Fetch full block data
-            fetchBlock(apiUrl, height, apiKey).then(block => {
+            fetchBlock(apiBase, network, height).then(block => {
               if (block) {
                 const timestamp = parseInt(block.block_timestamp) / 1000;
                 const txCount = block.transactions?.length || 0;
@@ -530,9 +573,9 @@ export function useAptosStream() {
 
     // Start trying WebSocket endpoints
     tryConnect(0);
-  }, [addBlock, apiUrl, wsEndpoints, apiKey]);
+  }, [addBlock, apiBase, wsEndpoints, network]);
 
-  // Main polling effect - restarts whenever network/apiUrl changes
+  // Main polling effect - restarts whenever network/apiBase changes
   useEffect(() => {
     // Reset all refs for fresh start
     lastBlockRef.current = 0;
@@ -543,6 +586,8 @@ export function useAptosStream() {
     errorCountRef.current = 0;
     lastSuccessTimeRef.current = Date.now();
     isPollingRef.current = false;
+    rateLimitedUntilRef.current = 0;
+    baseIntervalRef.current = defaultPollMs;
 
     // Reset stats state
     setStats({
@@ -567,7 +612,7 @@ export function useAptosStream() {
     return () => {
       clearTimeout(startTimeout);
       if (pollIntervalRef.current) {
-        clearInterval(pollIntervalRef.current);
+        clearTimeout(pollIntervalRef.current);
         pollIntervalRef.current = null;
       }
       if (wsRef.current) {
@@ -578,6 +623,8 @@ export function useAptosStream() {
         clearTimeout(reconnectTimeoutRef.current);
       }
       isPollingRef.current = false;
+      rateLimitedUntilRef.current = 0;
+      baseIntervalRef.current = defaultPollMs;
     };
   }, [network, startPolling, connectWebSocket]);
 

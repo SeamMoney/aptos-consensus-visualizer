@@ -1,38 +1,38 @@
 import { BlockStats, calculateTPS, calculateAvgBlockTime } from "@/lib/aptos";
+import { fetchFromAny, getNetwork } from "@/app/api/aptos/_utils";
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
-const APTOS_API = "https://api.mainnet.aptoslabs.com/v1";
-
 // Global cache to share across requests (avoids rate limits)
 let globalCache = {
+  network: "mainnet" as "mainnet" | "testnet",
   lastBlockHeight: 0,
   recentBlocks: [] as BlockStats[],
   lastFetchTime: 0,
 };
 
-// Fetch with retry and backoff
-async function fetchJSON(url: string, retries = 3): Promise<any> {
-  for (let i = 0; i < retries; i++) {
-    try {
-      const res = await fetch(url, { cache: 'no-store' });
-      if (res.status === 429) {
-        // Rate limited - wait longer
-        await new Promise(r => setTimeout(r, 2000 * (i + 1)));
-        continue;
+function parseBlockMetadata(block: any): Partial<BlockStats> {
+  const metadata: Partial<BlockStats> = {};
+  if (block.transactions) {
+    for (const tx of block.transactions) {
+      if (tx.type === "block_metadata_transaction") {
+        metadata.proposer = tx.proposer;
+        metadata.round = parseInt(tx.round || "0");
+        metadata.epoch = parseInt(tx.epoch || "0");
+        metadata.votesBitvec = tx.previous_block_votes_bitvec;
+        metadata.failedProposers =
+          tx.failed_proposer_indices?.map((i: string) => parseInt(i)) || [];
+        break;
       }
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      return res.json();
-    } catch (e) {
-      if (i === retries - 1) throw e;
-      await new Promise(r => setTimeout(r, 500 * (i + 1)));
     }
   }
+  return metadata;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const encoder = new TextEncoder();
+  const network = getNetwork(request);
 
   const stream = new ReadableStream({
     async start(controller) {
@@ -50,9 +50,19 @@ export async function GET() {
       const poll = async () => {
         if (closed) return;
 
-        // Rate limit: only fetch if 2 seconds have passed since last fetch
+        // Rate limit: only fetch if interval has passed since last fetch
         const now = Date.now();
-        if (now - globalCache.lastFetchTime < 2000) {
+        const pollIntervalMs = parseInt(process.env.APTOS_STREAM_POLL_MS || "500");
+        if (globalCache.network !== network) {
+          globalCache = {
+            network,
+            lastBlockHeight: 0,
+            recentBlocks: [],
+            lastFetchTime: 0,
+          };
+        }
+
+        if (now - globalCache.lastFetchTime < pollIntervalMs) {
           // Send cached data
           if (globalCache.recentBlocks.length > 0) {
             sendEvent({
@@ -71,14 +81,20 @@ export async function GET() {
 
         try {
           // Get latest ledger info
-          const ledger = await fetchJSON(APTOS_API);
+          const ledgerRes = await fetchFromAny("/", network, { cache: "no-store" });
+          if (!ledgerRes.ok) throw new Error(`Ledger ${ledgerRes.status}`);
+          const ledger = await ledgerRes.json();
           const currentHeight = parseInt(ledger.block_height);
 
           if (currentHeight > globalCache.lastBlockHeight) {
             // Fetch just the latest block
-            const block = await fetchJSON(
-              `${APTOS_API}/blocks/by_height/${currentHeight}?with_transactions=true`
+            const blockRes = await fetchFromAny(
+              `/blocks/by_height/${currentHeight}?with_transactions=true`,
+              network,
+              { cache: "no-store" }
             );
+            if (!blockRes.ok) throw new Error(`Block ${blockRes.status}`);
+            const block = await blockRes.json();
 
             const timestamp = parseInt(block.block_timestamp) / 1000;
             const txCount = block.transactions?.length || 0;
@@ -97,15 +113,18 @@ export async function GET() {
               }
             }
 
+            const metadata = parseBlockMetadata(block);
             const newBlock: BlockStats = {
               blockHeight: currentHeight,
               txCount,
               timestamp,
               blockTimeMs,
               gasUsed,
+              ...metadata,
             };
 
             // Update global cache
+            globalCache.network = network;
             globalCache.recentBlocks = [newBlock, ...globalCache.recentBlocks].slice(0, 50);
             globalCache.lastBlockHeight = currentHeight;
             globalCache.lastFetchTime = now;
@@ -121,6 +140,7 @@ export async function GET() {
               }
             });
           } else {
+            globalCache.network = network;
             globalCache.lastFetchTime = now;
           }
         } catch (error) {
@@ -132,8 +152,9 @@ export async function GET() {
       // Initial fetch
       await poll();
 
-      // Poll every 2.5 seconds to stay under rate limits
-      const interval = setInterval(poll, 2500);
+      // Poll at configured interval
+      const intervalMs = parseInt(process.env.APTOS_STREAM_POLL_MS || "500");
+      const interval = setInterval(poll, intervalMs);
 
       // Cleanup after 5 minutes
       const timeout = setTimeout(() => {
