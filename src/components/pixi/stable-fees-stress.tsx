@@ -43,6 +43,7 @@ export const StableFeesStress = memo(function StableFeesStress({
   const containerRef = useRef<HTMLDivElement>(null);
   const appRef = useRef<Application | null>(null);
   const initAttemptedRef = useRef(false);
+  const mountedRef = useRef(true);
 
   const isPlayingRef = useRef(true);
   const startTimeRef = useRef<number>(0);
@@ -79,6 +80,7 @@ export const StableFeesStress = memo(function StableFeesStress({
   }, [isPlaying]);
 
   const updateAnimation = useCallback(() => {
+    if (!mountedRef.current) return;
     const app = appRef.current;
     const container = containerRef.current;
     if (!app || !container) return;
@@ -646,6 +648,7 @@ export const StableFeesStress = memo(function StableFeesStress({
     textsRef.current.forEach((t) => app.stage.addChild(t));
 
     startTimeRef.current = performance.now();
+    mountedRef.current = true;
     setIsReady(true);
 
     app.ticker.add(updateAnimation);
@@ -679,6 +682,7 @@ export const StableFeesStress = memo(function StableFeesStress({
     initPixi();
 
     return () => {
+      mountedRef.current = false;
       clearTimeout(initTimeout);
       resizeObserver.disconnect();
       if (appRef.current) {
