@@ -61,7 +61,7 @@ export const BatchSizeNoise = memo(function BatchSizeNoise() {
 
     const interval = setInterval(() => {
       addPoint();
-    }, 50); // Add a new point every 50ms
+    }, 65); // Add a new point every 65ms
 
     return () => clearInterval(interval);
   }, [isPlaying, isVisible, addPoint]);
