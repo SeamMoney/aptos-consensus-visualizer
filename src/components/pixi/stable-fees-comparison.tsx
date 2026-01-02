@@ -431,6 +431,8 @@ export const StableFeesComparison = memo(function StableFeesComparison({
   const [aptosLatencyState, setAptosLatencyState] = useState({ latency: 900, unit: 'ms' });
   const [leftYAxisLabels, setLeftYAxisLabels] = useState<string[]>(['$0.05', '$0.03', '$0.01', '$0.007']);
   const [rightYAxisLabels, setRightYAxisLabels] = useState<string[]>(['$0.0007', '$0.0006', '$0.0004', '$0.0003']);
+  const [leftCurrentY, setLeftCurrentY] = useState<number>(150); // Y position for left price label
+  const [rightCurrentY, setRightCurrentY] = useState<number>(250); // Y position for right price label
 
   const isVisible = useVisibility(containerRef);
   const isPlayingRef = useRef(true);
@@ -727,12 +729,11 @@ export const StableFeesComparison = memo(function StableFeesComparison({
       const yMin = Math.max(0, dataMin - padding);
       const yMax = dataMax + padding;
 
-      // Draw chart area - responsive inner margins
-      const yAxisWidth = isMobile ? 32 : 40;
-      const chartInnerX = margin + yAxisWidth;
-      const chartInnerWidth = chartWidth - (isMobile ? 38 : 50);
-      const chartInnerTop = chartTop + (isMobile ? 32 : 40);
-      const chartInnerHeight = chartHeight - (isMobile ? 42 : 55);
+      // Draw chart area - chart fills box, Y-axis labels overlay
+      const chartInnerX = margin + 8; // Small padding from left edge
+      const chartInnerWidth = chartWidth - 16; // Full width minus small padding
+      const chartInnerTop = chartTop + (isMobile ? 28 : 35);
+      const chartInnerHeight = chartHeight - (isMobile ? 38 : 48);
 
       // Grid lines
       leftChart.setStrokeStyle({ width: 1, color: 0x374151, alpha: 0.3 });
@@ -777,6 +778,9 @@ export const StableFeesComparison = memo(function StableFeesComparison({
       const currentX = chartInnerX + chartInnerWidth;
       const currentY = chartInnerTop + chartInnerHeight - Math.max(0, Math.min(1, lastYRatio)) * chartInnerHeight;
 
+      // Update state for HTML price label position
+      setLeftCurrentY(currentY);
+
       if (intensity > 0.5) {
         const pulse = Math.sin(elapsed * 0.01) * 0.3 + 0.7;
         leftChart.circle(currentX, currentY, 10 * pulse);
@@ -809,12 +813,11 @@ export const StableFeesComparison = memo(function StableFeesComparison({
       const aptosYMin = 0;
       const aptosYMax = scenario.aptosContention > 0.2 ? 0.008 : scenario.aptosContention > 0 ? 0.003 : 0.0015;
 
-      // Draw chart area - responsive inner margins (same as left)
-      const rightYAxisWidth = isMobile ? 32 : 40;
-      const chartInnerX = halfWidth + margin + rightYAxisWidth;
-      const chartInnerWidth = chartWidth - (isMobile ? 38 : 50);
-      const chartInnerTop = chartTop + (isMobile ? 32 : 40);
-      const chartInnerHeight = chartHeight - (isMobile ? 42 : 55);
+      // Draw chart area - chart fills box, Y-axis labels overlay
+      const chartInnerX = halfWidth + margin + 8; // Small padding from left edge
+      const chartInnerWidth = chartWidth - 16; // Full width minus small padding
+      const chartInnerTop = chartTop + (isMobile ? 28 : 35);
+      const chartInnerHeight = chartHeight - (isMobile ? 38 : 48);
 
       // Grid lines
       rightChart.setStrokeStyle({ width: 1, color: 0x374151, alpha: 0.3 });
@@ -861,6 +864,9 @@ export const StableFeesComparison = memo(function StableFeesComparison({
       const lastYRatio = aptosYMax > aptosYMin ? (lastFee - aptosYMin) / (aptosYMax - aptosYMin) : 0.5;
       const currentX = chartInnerX + chartInnerWidth;
       const currentY = chartInnerTop + chartInnerHeight - Math.max(0, Math.min(1, lastYRatio)) * chartInnerHeight;
+
+      // Update state for HTML price label position
+      setRightCurrentY(currentY);
 
       rightChart.circle(currentX, currentY, 4);
       rightChart.fill({ color: APTOS.color });
@@ -1328,11 +1334,12 @@ export const StableFeesComparison = memo(function StableFeesComparison({
               </div>
             ))}
 
-            {/* Current price labels on charts */}
+            {/* Current price labels on charts - track the line endpoint */}
             <div
-              className="absolute pointer-events-none font-bold px-1.5 sm:px-2 py-0.5 sm:py-1 rounded text-[10px] sm:text-[11px] top-[85px] sm:top-[100px] right-[calc(50%+15px)] sm:right-[calc(50%+25px)]"
+              className="absolute pointer-events-none font-bold px-1.5 sm:px-2 py-0.5 sm:py-1 rounded text-[10px] sm:text-[11px] right-[calc(50%+15px)] sm:right-[calc(50%+20px)]"
               style={{
-                backgroundColor: 'rgba(0,0,0,0.85)',
+                top: Math.max(70, Math.min(280, leftCurrentY - 12)),
+                backgroundColor: 'rgba(0,0,0,0.9)',
                 border: `1px solid #${chain.color.toString(16).padStart(6, '0')}`,
                 color: `#${chain.color.toString(16).padStart(6, '0')}`,
               }}
@@ -1340,9 +1347,10 @@ export const StableFeesComparison = memo(function StableFeesComparison({
               {formatFee(leftFee)}
             </div>
             <div
-              className="absolute pointer-events-none font-bold px-1.5 sm:px-2 py-0.5 sm:py-1 rounded text-[10px] sm:text-[11px] bottom-[90px] sm:bottom-[100px] right-[15px] sm:right-[25px]"
+              className="absolute pointer-events-none font-bold px-1.5 sm:px-2 py-0.5 sm:py-1 rounded text-[10px] sm:text-[11px] right-[15px] sm:right-[20px]"
               style={{
-                backgroundColor: 'rgba(0,0,0,0.85)',
+                top: Math.max(70, Math.min(280, rightCurrentY - 12)),
+                backgroundColor: 'rgba(0,0,0,0.9)',
                 border: '1px solid #00D9A5',
                 color: '#00D9A5',
               }}
