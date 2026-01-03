@@ -78,6 +78,17 @@ export function formatFee(n: number): string {
   return `$${n.toFixed(1)}`;
 }
 
+// Format fee for large display - FIXED width to prevent jumping
+// More granular decimals for small values to match chart movement
+export function formatFeeStable(n: number): string {
+  if (!isFinite(n) || isNaN(n)) return '$0.00000';
+  if (n < 0.01) return `$${n.toFixed(5)}`; // $0.00050 format - most granular for tiny fees
+  if (n < 1) return `$${n.toFixed(4)}`; // $0.0500 format
+  if (n < 10) return `$${n.toFixed(3)}`; // $1.234 format
+  if (n < 100) return `$${n.toFixed(2)}`; // $12.34 format
+  return `$${n.toFixed(1)}`; // $101.2 format
+}
+
 // Default PixiJS application config
 export const DEFAULT_PIXI_CONFIG = {
   backgroundColor: PIXI_COLORS.background,

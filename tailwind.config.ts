@@ -8,6 +8,9 @@ export default {
   ],
   theme: {
     extend: {
+      fontFamily: {
+        'bai': ['var(--font-bai-jamjuree)', 'sans-serif'],
+      },
       colors: {
         aptos: {
           teal: "#06D6A0",

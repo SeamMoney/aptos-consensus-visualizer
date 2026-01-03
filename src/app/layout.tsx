@@ -1,9 +1,15 @@
 import type { Metadata } from "next";
-import { Inter } from "next/font/google";
+import { Inter, Bai_Jamjuree } from "next/font/google";
 import "./globals.css";
 import { Providers } from "./providers";
 
 const inter = Inter({ subsets: ["latin"] });
+
+export const baiJamjuree = Bai_Jamjuree({
+  weight: ['400', '500', '600', '700'],
+  subsets: ["latin"],
+  variable: '--font-bai-jamjuree',
+});
 
 export const metadata: Metadata = {
   title: "Aptos Velociraptr | 160K+ TPS Visualized",
@@ -103,7 +109,7 @@ export default function RootLayout({
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
       </head>
-      <body className={inter.className}>
+      <body className={`${inter.className} ${baiJamjuree.variable}`}>
         <Providers>{children}</Providers>
       </body>
     </html>
