@@ -17,12 +17,20 @@ export interface BlockInfo {
   transactions?: unknown[];
 }
 
+export interface GasPriceStats {
+  min: number;
+  max: number;
+  median: number;
+  count: number;
+}
+
 export interface BlockStats {
   blockHeight: number;
   txCount: number;
   timestamp: number;
   blockTimeMs: number; // Time since previous block
   gasUsed: number;
+  gasStats?: GasPriceStats; // Gas price stats from user transactions
   // Consensus metadata (from block_metadata_transaction)
   proposer?: string;
   round?: number;

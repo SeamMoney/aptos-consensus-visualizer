@@ -31,6 +31,7 @@ import {
   FeeMarketExplainer,
   PerpDexScenario,
   EncryptedMempool,
+  LiveGasChart,
 } from "@/components/pixi";
 import { useAptosStream } from "@/hooks/useAptosStream";
 import { LearnMoreLink } from "@/components/ui/tooltip";
@@ -273,7 +274,12 @@ export default function Home() {
           <PerpDexScenario />
         </section>
 
-        {/* Stable Fees Under Stress (Legacy) */}
+        {/* Live Gas Price Chart */}
+        <section className="mb-4">
+          <LiveGasChart />
+        </section>
+
+        {/* Transaction Journey: Solana vs Aptos */}
         <section className="mb-4">
           <StableFeesStress />
         </section>

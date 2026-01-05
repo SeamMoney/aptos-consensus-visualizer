@@ -1,40 +1,46 @@
 "use client";
 
 import { memo, useEffect, useRef, useState, useCallback } from "react";
-import { Application, Graphics, Text, TextStyle } from "pixi.js";
+import { Application, Graphics } from "pixi.js";
 import { useVisibility } from "@/hooks/useVisibility";
-import {
-  PIXI_COLORS,
-  formatNumber,
-  lerp,
-  easings,
-} from "@/lib/pixi-utils";
+import { PIXI_COLORS } from "@/lib/pixi-utils";
 
 interface StableFeesStressProps {
   className?: string;
 }
 
-// The real story: massive capacity prevents congestion
+// REALISTIC numbers based on actual chain behavior
+// Solana: ~4K-10K TPS sustained, drops 10-30% under heavy load
+// Aptos: ~30K+ TPS demonstrated, 160K theoretical, minimal drops
 const CONFIG = {
-  duration: 25000, // 25 second cycle
-  aptosCapacity: 160000, // Block-STM theoretical max
-  ethCapacity: 30, // ETH L1 for comparison
-  demandMin: 5000,
-  demandMax: 120000, // Peak demand during stress test
-  baseFee: 0.0001, // $0.0001
-  stateUpdateInterval: 80,
-  maxParticles: 500,
+  cycleDuration: 30000, // 30 second full cycle
+  // Realistic transaction counts per spawn (not TPS, visual particles)
+  lowLoad: 2,      // Normal: both handle fine
+  mediumLoad: 4,   // Moderate: Solana starts queuing
+  highLoad: 6,     // Heavy: Solana drops some (10-20%)
+  peakLoad: 8,     // Peak: Solana drops more (20-30%)
+
+  // Solana realistic behavior
+  solanaThreads: 4,
+  solanaQueueMax: 20,           // Reasonable queue
+  solanaProcessRate: 3,         // Txs processed per frame
+  solanaDropChanceAtCapacity: 0.15, // 15% drop when queue is filling
+  solanaDropChanceOverflow: 0.4,    // 40% drop when queue is full
+
+  // Aptos behavior
+  aptosThreads: 12,
+  aptosProcessRate: 8,          // Much higher throughput
 };
 
-interface Particle {
+interface Tx {
+  id: number;
   x: number;
   y: number;
-  vx: number;
-  vy: number;
-  size: number;
-  alpha: number;
-  processed: boolean;
-  lane: number;
+  targetY: number;
+  state: "incoming" | "queued" | "executing" | "done" | "dropped";
+  thread: number;
+  progress: number;
+  speed: number;
 }
 
 export const StableFeesStress = memo(function StableFeesStress({
@@ -45,530 +51,315 @@ export const StableFeesStress = memo(function StableFeesStress({
   const initAttemptedRef = useRef(false);
   const mountedRef = useRef(true);
 
-  const isPlayingRef = useRef(true);
   const startTimeRef = useRef<number>(0);
-  const particlesRef = useRef<Particle[]>([]);
-  const lastStateUpdateRef = useRef<number>(0);
+  const lastSpawnRef = useRef(0);
+  const txIdRef = useRef(0);
+  const solanaTxsRef = useRef<Tx[]>([]);
+  const aptosTxsRef = useRef<Tx[]>([]);
+  const solanaQueueRef = useRef<Tx[]>([]);
 
   const graphicsRef = useRef<{
-    background: Graphics | null;
-    capacityBar: Graphics | null;
-    demandBar: Graphics | null;
-    comparison: Graphics | null;
-    particles: Graphics | null;
-    effects: Graphics | null;
-  }>({
-    background: null,
-    capacityBar: null,
-    demandBar: null,
-    comparison: null,
-    particles: null,
-    effects: null,
-  });
-
-  const textsRef = useRef<Text[]>([]);
+    bg: Graphics | null;
+    solana: Graphics | null;
+    aptos: Graphics | null;
+  }>({ bg: null, solana: null, aptos: null });
 
   const [isReady, setIsReady] = useState(false);
-  const [isPlaying, setIsPlaying] = useState(true);
-  const [currentDemand, setCurrentDemand] = useState(CONFIG.demandMin);
-  const [utilization, setUtilization] = useState(0);
+  const [solanaConfirmed, setSolanaConfirmed] = useState(0);
+  const [solanaDropped, setSolanaDropped] = useState(0);
+  const [currentTPS, setCurrentTPS] = useState(0);
 
   const isVisible = useVisibility(containerRef);
-
-  useEffect(() => {
-    isPlayingRef.current = isPlaying;
-  }, [isPlaying]);
 
   const updateAnimation = useCallback(() => {
     if (!mountedRef.current) return;
     const app = appRef.current;
-    const container = containerRef.current;
-    if (!app || !container) return;
+    if (!app) return;
+
+    try {
+      if (!app.renderer || !app.stage) return;
+    } catch { return; }
 
     const now = performance.now();
     const elapsed = now - startTimeRef.current;
-    const progress = (elapsed % CONFIG.duration) / CONFIG.duration;
+    const cycleProgress = (elapsed % CONFIG.cycleDuration) / CONFIG.cycleDuration;
 
-    // Get actual container dimensions
-    const rect = container.getBoundingClientRect();
-    const width = rect.width;
-    const height = rect.height;
+    const width = app.screen.width;
+    const height = app.screen.height;
+    if (width < 10 || height < 10) return;
 
-    // Ensure renderer matches container
-    if (Math.abs(app.screen.width - width) > 1 || Math.abs(app.screen.height - height) > 1) {
-      app.renderer.resize(width, height);
-    }
+    // TPS simulation - realistic ranges
+    // Solana handles ~5-10K TPS normally, struggles above 10K
+    let tps: number;
+    let spawnCount: number;
 
-    // Demand follows a stress test pattern: ramp up, sustain, ease down
-    let demandProgress: number;
-    if (progress < 0.1) {
-      demandProgress = easings.easeOutQuad(progress / 0.1) * 0.3;
-    } else if (progress < 0.4) {
-      demandProgress = 0.3 + easings.easeInOutCubic((progress - 0.1) / 0.3) * 0.5;
-    } else if (progress < 0.7) {
-      demandProgress = 0.8 + Math.sin((progress - 0.4) * Math.PI * 3) * 0.15;
+    if (cycleProgress < 0.25) {
+      // Normal: 5K TPS
+      tps = 5000;
+      spawnCount = CONFIG.lowLoad;
+    } else if (cycleProgress < 0.5) {
+      // Busy: 10K TPS (Solana's limit)
+      tps = 10000;
+      spawnCount = CONFIG.mediumLoad;
+    } else if (cycleProgress < 0.75) {
+      // Heavy: 20K TPS (over Solana capacity)
+      tps = 20000;
+      spawnCount = CONFIG.highLoad;
+    } else if (cycleProgress < 0.9) {
+      // Peak: 30K TPS (way over Solana)
+      tps = 30000;
+      spawnCount = CONFIG.peakLoad;
     } else {
-      demandProgress = 0.8 - easings.easeInQuad((progress - 0.7) / 0.3) * 0.5;
+      // Cool down
+      tps = 10000;
+      spawnCount = CONFIG.mediumLoad;
+    }
+    setCurrentTPS(tps);
+
+    const halfWidth = width / 2;
+    const padding = 20;
+
+    // Layout - cleaner spacing
+    const solanaStart = padding;
+    const solanaQueue = 80;
+    const solanaExecStart = 140;
+    const solanaExecEnd = halfWidth - padding - 10;
+    const threadHeight = (height - 80) / CONFIG.solanaThreads;
+
+    const aptosStart = halfWidth + padding;
+    const aptosDispatch = halfWidth + 60;
+    const aptosExecStart = halfWidth + 100;
+    const aptosExecEnd = width - padding - 10;
+    const aptosThreadHeight = (height - 60) / CONFIG.aptosThreads;
+
+    // ===== SPAWN =====
+    const spawnInterval = 150; // Spawn every 150ms - much calmer
+    if (now - lastSpawnRef.current > spawnInterval) {
+      lastSpawnRef.current = now;
+
+      for (let i = 0; i < spawnCount; i++) {
+        const txId = txIdRef.current++;
+
+        // Solana tx
+        solanaTxsRef.current.push({
+          id: txId,
+          x: solanaStart,
+          y: height / 2 + (Math.random() - 0.5) * 120,
+          targetY: 0,
+          state: "incoming",
+          thread: -1,
+          progress: 0,
+          speed: 2 + Math.random(),
+        });
+
+        // Aptos tx - assigned to thread immediately
+        const aptosThread = Math.floor(Math.random() * CONFIG.aptosThreads);
+        aptosTxsRef.current.push({
+          id: txId,
+          x: aptosStart,
+          y: 40 + aptosThread * aptosThreadHeight + aptosThreadHeight / 2,
+          targetY: 40 + aptosThread * aptosThreadHeight + aptosThreadHeight / 2,
+          state: "incoming",
+          thread: aptosThread,
+          progress: 0,
+          speed: 3 + Math.random(),
+        });
+      }
     }
 
-    const demand = lerp(CONFIG.demandMin, CONFIG.demandMax, demandProgress);
-    const util = (demand / CONFIG.aptosCapacity) * 100;
-
-    // Throttle React state updates
-    if (now - lastStateUpdateRef.current > CONFIG.stateUpdateInterval) {
-      lastStateUpdateRef.current = now;
-      setCurrentDemand(Math.round(demand));
-      setUtilization(Math.round(util));
-    }
-
-    // Layout - FULL CANVAS with mobile responsiveness
-    const isMobile = width < 400;
-    const margin = { left: isMobile ? 12 : 20, right: isMobile ? 12 : 20, top: 15, bottom: 15 };
-    const centerX = width / 2;
-
-    // Section heights - adjusted for mobile
-    const titleHeight = isMobile ? 40 : 50;
-    const capacitySection = height * 0.35;
-    const comparisonSection = height * 0.30;
-    const particleSection = height * 0.25;
-
-    const capacityY = margin.top + titleHeight;
-    const comparisonY = capacityY + capacitySection + 20;
-    const particleY = comparisonY + comparisonSection + 10;
-
-    // Draw background
-    const bg = graphicsRef.current.background;
+    // ===== BACKGROUND =====
+    const bg = graphicsRef.current.bg;
     if (bg) {
       bg.clear();
       bg.rect(0, 0, width, height);
-      bg.fill({ color: 0x0a0a0b });
+      bg.fill({ color: 0x0a0a0f });
 
-      // Animated grid
-      const gridAlpha = 0.04 + Math.sin(elapsed * 0.001) * 0.01;
-      bg.setStrokeStyle({ width: 1, color: 0x1f2937, alpha: gridAlpha });
-      const gridSpacing = 30;
-      const offset = (elapsed * 0.015) % gridSpacing;
-      for (let x = -offset; x < width + gridSpacing; x += gridSpacing) {
-        bg.moveTo(x, 0);
-        bg.lineTo(x, height);
-      }
-      for (let y = 0; y < height; y += gridSpacing) {
-        bg.moveTo(0, y);
-        bg.lineTo(width, y);
-      }
-      bg.stroke();
-
-      // Section backgrounds
-      bg.roundRect(margin.left, capacityY, width - margin.left * 2, capacitySection, 12);
-      bg.fill({ color: 0x0d1117, alpha: 0.9 });
-      bg.stroke({ width: 1, color: PIXI_COLORS.primary, alpha: 0.3 });
-
-      bg.roundRect(margin.left, comparisonY, width - margin.left * 2, comparisonSection, 12);
-      bg.fill({ color: 0x0d1117, alpha: 0.9 });
-      bg.stroke({ width: 1, color: 0x374151, alpha: 0.3 });
+      // Divider
+      bg.rect(halfWidth - 1, 0, 2, height);
+      bg.fill({ color: 0x1f2937 });
     }
 
-    // Draw capacity visualization
-    const capacityBar = graphicsRef.current.capacityBar;
-    if (capacityBar) {
-      capacityBar.clear();
+    // ===== SOLANA =====
+    const solana = graphicsRef.current.solana;
+    if (solana) {
+      solana.clear();
 
-      const barPadding = isMobile ? 25 : 40;
-      const barWidth = width - margin.left * 2 - barPadding * 2;
-      const barHeight = isMobile ? 50 : 60;
-      const barX = margin.left + barPadding;
-      const barY = capacityY + (isMobile ? 60 : 70);
+      // Queue box
+      const queueFill = solanaQueueRef.current.length / CONFIG.solanaQueueMax;
+      const queueColor = queueFill > 0.8 ? 0xef4444 : queueFill > 0.5 ? 0xfbbf24 : 0x3b82f6;
 
-      // Capacity container (the ceiling)
-      capacityBar.roundRect(barX, barY, barWidth, barHeight, 8);
-      capacityBar.fill({ color: 0x1a1a2e, alpha: 0.8 });
-      capacityBar.stroke({ width: 2, color: PIXI_COLORS.primary, alpha: 0.5 });
+      solana.roundRect(solanaQueue - 15, 50, 30, height - 100, 6);
+      solana.fill({ color: queueColor, alpha: 0.15 });
+      solana.stroke({ color: queueColor, width: 2, alpha: 0.6 });
 
-      // Capacity ceiling line with glow
-      const ceilingY = barY + 5;
-      capacityBar.setStrokeStyle({ width: 3, color: PIXI_COLORS.primary, alpha: 0.3 });
-      capacityBar.moveTo(barX + 5, ceilingY);
-      capacityBar.lineTo(barX + barWidth - 5, ceilingY);
-      capacityBar.stroke();
-
-      capacityBar.setStrokeStyle({ width: 2, color: PIXI_COLORS.primary, alpha: 0.8 });
-      capacityBar.moveTo(barX + 5, ceilingY);
-      capacityBar.lineTo(barX + barWidth - 5, ceilingY);
-      capacityBar.stroke();
-
-      // Demand fill (animated)
-      const demandRatio = demand / CONFIG.aptosCapacity;
-      const demandWidth = (barWidth - 10) * demandRatio;
-      const demandHeight = barHeight - 15;
-
-      // Gradient effect for demand bar
-      for (let layer = 4; layer >= 0; layer--) {
-        const layerAlpha = 0.15 + layer * 0.08;
-        const layerOffset = layer * 2;
-        capacityBar.roundRect(
-          barX + 5,
-          barY + 10 + layerOffset,
-          demandWidth,
-          demandHeight - layerOffset * 2,
-          4
-        );
-        capacityBar.fill({ color: PIXI_COLORS.secondary, alpha: layerAlpha });
+      // Queue fill level
+      if (queueFill > 0) {
+        const fillHeight = (height - 110) * queueFill;
+        solana.roundRect(solanaQueue - 12, height - 55 - fillHeight, 24, fillHeight, 4);
+        solana.fill({ color: queueColor, alpha: 0.4 });
       }
 
-      // Main demand bar
-      capacityBar.roundRect(barX + 5, barY + 10, demandWidth, demandHeight, 4);
-      capacityBar.fill({ color: PIXI_COLORS.secondary, alpha: 0.9 });
-
-      // Pulsing edge effect
-      const pulse = Math.sin(elapsed * 0.008) * 0.3 + 0.7;
-      capacityBar.roundRect(barX + 5 + demandWidth - 4, barY + 10, 8, demandHeight, 2);
-      capacityBar.fill({ color: 0xffffff, alpha: 0.3 * pulse });
-
-      // Headroom indicator (the gap = why fees stay low)
-      const headroomX = barX + 5 + demandWidth + 10;
-      const headroomWidth = barWidth - demandWidth - 20;
-      if (headroomWidth > 50) {
-        capacityBar.setStrokeStyle({ width: 1, color: PIXI_COLORS.primary, alpha: 0.4 });
-        capacityBar.rect(headroomX, barY + 15, headroomWidth, demandHeight - 10);
-        capacityBar.stroke();
-
-        // Diagonal lines to show "available space"
-        for (let i = 0; i < headroomWidth; i += 15) {
-          capacityBar.setStrokeStyle({ width: 1, color: PIXI_COLORS.primary, alpha: 0.2 });
-          capacityBar.moveTo(headroomX + i, barY + demandHeight);
-          capacityBar.lineTo(headroomX + i + 20, barY + 15);
-          capacityBar.stroke();
-        }
+      // Execution threads
+      for (let i = 0; i < CONFIG.solanaThreads; i++) {
+        const ty = 50 + i * threadHeight + threadHeight / 2;
+        solana.roundRect(solanaExecStart, ty - 5, solanaExecEnd - solanaExecStart, 10, 3);
+        solana.fill({ color: 0x1e293b });
       }
 
-      // Utilization percentage badge
-      const badgeX = barX + demandWidth / 2 - 30;
-      const badgeY = barY + barHeight / 2 - 12;
-      capacityBar.roundRect(badgeX, badgeY, 60, 24, 6);
-      capacityBar.fill({ color: 0x0d1117, alpha: 0.95 });
-      capacityBar.stroke({ width: 1, color: PIXI_COLORS.secondary, alpha: 0.6 });
+      // Process incoming -> queue or drop
+      const queuePressure = solanaQueueRef.current.length / CONFIG.solanaQueueMax;
 
-      // Scale markers
-      const markers = [0, 25, 50, 75, 100];
-      markers.forEach((pct) => {
-        const markerX = barX + 5 + ((barWidth - 10) * pct) / 100;
-        capacityBar.setStrokeStyle({ width: 1, color: 0x4b5563, alpha: 0.5 });
-        capacityBar.moveTo(markerX, barY + barHeight - 5);
-        capacityBar.lineTo(markerX, barY + barHeight + 5);
-        capacityBar.stroke();
-      });
-    }
+      solanaTxsRef.current.forEach(tx => {
+        if (tx.state === "incoming") {
+          tx.x += tx.speed;
 
-    // Draw comparison section
-    const comparison = graphicsRef.current.comparison;
-    if (comparison) {
-      comparison.clear();
+          if (tx.x >= solanaQueue - 20) {
+            // Decide: queue or drop based on realistic probability
+            let dropChance = 0;
+            if (queuePressure > 0.9) {
+              dropChance = CONFIG.solanaDropChanceOverflow;
+            } else if (queuePressure > 0.6) {
+              dropChance = CONFIG.solanaDropChanceAtCapacity * queuePressure;
+            }
 
-      const compPadding = isMobile ? 15 : 30;
-      const boxWidth = (width - margin.left * 2 - compPadding * 3) / 2;
-      const boxHeight = comparisonSection - 50;
-      const aptosBoxX = margin.left + compPadding;
-      const ethBoxX = aptosBoxX + boxWidth + compPadding;
-      const boxY = comparisonY + 25;
-
-      // Aptos box - SUCCESS
-      comparison.roundRect(aptosBoxX, boxY, boxWidth, boxHeight, 10);
-      comparison.fill({ color: 0x0d2818, alpha: 0.8 });
-      comparison.stroke({ width: 2, color: PIXI_COLORS.primary, alpha: 0.6 });
-
-      // Aptos utilization bar
-      const aptosBarY = boxY + 55;
-      const aptosBarHeight = 30;
-      comparison.roundRect(aptosBoxX + 15, aptosBarY, boxWidth - 30, aptosBarHeight, 6);
-      comparison.fill({ color: 0x1a1a2e });
-
-      const aptosUtil = demand / CONFIG.aptosCapacity;
-      comparison.roundRect(aptosBoxX + 15, aptosBarY, (boxWidth - 30) * aptosUtil, aptosBarHeight, 6);
-      comparison.fill({ color: PIXI_COLORS.primary, alpha: 0.9 });
-
-      // Aptos checkmark
-      const checkX = aptosBoxX + boxWidth - 40;
-      const checkY = boxY + 15;
-      comparison.circle(checkX, checkY, 15);
-      comparison.fill({ color: PIXI_COLORS.primary, alpha: 0.3 });
-      comparison.setStrokeStyle({ width: 3, color: PIXI_COLORS.primary });
-      comparison.moveTo(checkX - 7, checkY);
-      comparison.lineTo(checkX - 2, checkY + 6);
-      comparison.lineTo(checkX + 8, checkY - 5);
-      comparison.stroke();
-
-      // ETH box - CONGESTED (same demand would overflow)
-      const ethUtil = demand / CONFIG.ethCapacity; // Will be >> 100%
-      const isOverloaded = ethUtil > 1;
-
-      comparison.roundRect(ethBoxX, boxY, boxWidth, boxHeight, 10);
-      comparison.fill({ color: isOverloaded ? 0x2d1515 : 0x1a1a2e, alpha: 0.8 });
-      comparison.stroke({ width: 2, color: isOverloaded ? PIXI_COLORS.danger : 0x6b7280, alpha: 0.6 });
-
-      // ETH utilization bar (overflowing!)
-      comparison.roundRect(ethBoxX + 15, aptosBarY, boxWidth - 30, aptosBarHeight, 6);
-      comparison.fill({ color: 0x1a1a2e });
-
-      // The bar overflows with danger color
-      const ethBarWidth = Math.min(boxWidth - 30, (boxWidth - 30) * Math.min(ethUtil, 1));
-      comparison.roundRect(ethBoxX + 15, aptosBarY, ethBarWidth, aptosBarHeight, 6);
-      comparison.fill({ color: PIXI_COLORS.danger, alpha: 0.9 });
-
-      // Overflow indicator
-      if (isOverloaded) {
-        const overflowPulse = Math.sin(elapsed * 0.01) * 0.3 + 0.7;
-        comparison.roundRect(ethBoxX + 15 + ethBarWidth - 5, aptosBarY, 10, aptosBarHeight, 3);
-        comparison.fill({ color: 0xffffff, alpha: overflowPulse * 0.5 });
-
-        // Warning stripes
-        for (let i = 0; i < 3; i++) {
-          comparison.roundRect(
-            ethBoxX + boxWidth - 15 - i * 8,
-            aptosBarY + 5,
-            4,
-            aptosBarHeight - 10,
-            2
-          );
-          comparison.fill({ color: PIXI_COLORS.danger, alpha: 0.6 - i * 0.15 });
-        }
-      }
-
-      // ETH X mark
-      const xX = ethBoxX + boxWidth - 40;
-      const xY = boxY + 15;
-      comparison.circle(xX, xY, 15);
-      comparison.fill({ color: PIXI_COLORS.danger, alpha: 0.3 });
-      comparison.setStrokeStyle({ width: 3, color: PIXI_COLORS.danger });
-      comparison.moveTo(xX - 6, xY - 6);
-      comparison.lineTo(xX + 6, xY + 6);
-      comparison.moveTo(xX + 6, xY - 6);
-      comparison.lineTo(xX - 6, xY + 6);
-      comparison.stroke();
-
-      // Fee comparison boxes
-      const feeBoxY = aptosBarY + aptosBarHeight + 15;
-      const feeBoxHeight = 35;
-
-      // Aptos fee
-      comparison.roundRect(aptosBoxX + 15, feeBoxY, boxWidth - 30, feeBoxHeight, 6);
-      comparison.fill({ color: PIXI_COLORS.primary, alpha: 0.15 });
-      comparison.stroke({ width: 1, color: PIXI_COLORS.primary, alpha: 0.4 });
-
-      // ETH fee (spikes with congestion)
-      const ethFee = isOverloaded ? Math.min(ethUtil * 10, 500) : 0.1;
-      comparison.roundRect(ethBoxX + 15, feeBoxY, boxWidth - 30, feeBoxHeight, 6);
-      comparison.fill({ color: PIXI_COLORS.danger, alpha: isOverloaded ? 0.25 : 0.1 });
-      comparison.stroke({ width: 1, color: isOverloaded ? PIXI_COLORS.danger : 0x6b7280, alpha: 0.4 });
-    }
-
-    // Particle flow (transaction throughput visualization)
-    const particles = graphicsRef.current.particles;
-    if (particles) {
-      particles.clear();
-
-      const particleZoneWidth = width - margin.left * 2;
-      const particleZoneHeight = particleSection - 30;
-      const particleZoneX = margin.left;
-      const particleZoneYStart = particleY + 15;
-
-      // Background for particle zone
-      particles.roundRect(particleZoneX, particleZoneYStart, particleZoneWidth, particleZoneHeight, 8);
-      particles.fill({ color: 0x0d1117, alpha: 0.6 });
-
-      // Spawn particles based on demand (more demand = more particles)
-      const spawnRate = (demand / CONFIG.aptosCapacity) * 12;
-      const spawnCount = Math.floor(spawnRate);
-
-      for (let i = 0; i < spawnCount; i++) {
-        if (particlesRef.current.length < CONFIG.maxParticles) {
-          const lane = Math.floor(Math.random() * 8);
-          const laneY = particleZoneYStart + 10 + (lane / 8) * (particleZoneHeight - 20);
-
-          particlesRef.current.push({
-            x: particleZoneX + 10 + Math.random() * 30,
-            y: laneY + (Math.random() - 0.5) * 8,
-            vx: 4 + Math.random() * 4 + (demand / CONFIG.aptosCapacity) * 4,
-            vy: (Math.random() - 0.5) * 0.4,
-            size: 2 + Math.random() * 3,
-            alpha: 0.8,
-            processed: false,
-            lane,
-          });
-        }
-      }
-
-      // Lane separators
-      for (let i = 1; i < 8; i++) {
-        const laneY = particleZoneYStart + (i / 8) * particleZoneHeight;
-        particles.setStrokeStyle({ width: 1, color: 0x374151, alpha: 0.2 });
-        particles.moveTo(particleZoneX + 10, laneY);
-        particles.lineTo(particleZoneX + particleZoneWidth - 10, laneY);
-        particles.stroke();
-      }
-
-      // Update and draw particles
-      particlesRef.current = particlesRef.current.filter((p) => {
-        p.x += p.vx;
-        p.y += p.vy + Math.sin(p.x * 0.02) * 0.2;
-
-        const maxX = particleZoneX + particleZoneWidth - 20;
-
-        // Processing effect at 80% across
-        if (!p.processed && p.x > particleZoneX + particleZoneWidth * 0.8) {
-          p.processed = true;
-          p.vx *= 1.5; // Speed boost when "processed"
-        }
-
-        if (p.x > maxX - 40) {
-          p.alpha -= 0.06;
-        }
-
-        if (p.alpha > 0.1) {
-          const color = p.processed ? PIXI_COLORS.primary : PIXI_COLORS.secondary;
-
-          // Trail
-          particles.setStrokeStyle({ width: p.size * 0.4, color, alpha: p.alpha * 0.3 });
-          particles.moveTo(p.x - p.vx * 3, p.y);
-          particles.lineTo(p.x, p.y);
-          particles.stroke();
-
-          // Glow
-          particles.circle(p.x, p.y, p.size * 2);
-          particles.fill({ color, alpha: p.alpha * 0.15 });
-
-          // Core
-          particles.circle(p.x, p.y, p.size);
-          particles.fill({ color, alpha: p.alpha * 0.8 });
-
-          // Bright center
-          if (p.processed) {
-            particles.circle(p.x, p.y, p.size * 0.4);
-            particles.fill({ color: 0xffffff, alpha: p.alpha * 0.6 });
+            if (Math.random() < dropChance) {
+              tx.state = "dropped";
+              setSolanaDropped(prev => prev + 1);
+            } else if (solanaQueueRef.current.length < CONFIG.solanaQueueMax) {
+              tx.state = "queued";
+              solanaQueueRef.current.push(tx);
+            } else {
+              tx.state = "dropped";
+              setSolanaDropped(prev => prev + 1);
+            }
           }
         }
-
-        return p.x < particleZoneX + particleZoneWidth && p.alpha > 0.05;
       });
 
-      // Processing zone indicator
-      const processX = particleZoneX + particleZoneWidth * 0.8;
-      particles.setStrokeStyle({ width: 2, color: PIXI_COLORS.primary, alpha: 0.3 });
-      particles.moveTo(processX, particleZoneYStart + 5);
-      particles.lineTo(processX, particleZoneYStart + particleZoneHeight - 5);
-      particles.stroke();
+      // Process queue -> execution (limited rate)
+      const busyThreads = new Set(
+        solanaTxsRef.current.filter(t => t.state === "executing").map(t => t.thread)
+      );
 
-      // Throughput indicator
-      const throughputWidth = 120;
-      const throughputX = particleZoneX + particleZoneWidth - throughputWidth - 15;
-      const throughputY = particleZoneYStart + particleZoneHeight - 25;
-      particles.roundRect(throughputX, throughputY, throughputWidth, 20, 4);
-      particles.fill({ color: 0x0d1117, alpha: 0.9 });
-      particles.stroke({ width: 1, color: PIXI_COLORS.primary, alpha: 0.5 });
+      let processed = 0;
+      while (solanaQueueRef.current.length > 0 && processed < CONFIG.solanaProcessRate) {
+        let freeThread = -1;
+        for (let t = 0; t < CONFIG.solanaThreads; t++) {
+          if (!busyThreads.has(t)) { freeThread = t; break; }
+        }
+        if (freeThread === -1) break;
+
+        const tx = solanaQueueRef.current.shift()!;
+        tx.state = "executing";
+        tx.thread = freeThread;
+        tx.x = solanaExecStart;
+        tx.targetY = 50 + freeThread * threadHeight + threadHeight / 2;
+        busyThreads.add(freeThread);
+        processed++;
+      }
+
+      // Update queue positions
+      solanaQueueRef.current.forEach((tx, i) => {
+        tx.x = solanaQueue;
+        tx.y = height - 60 - i * 8;
+      });
+
+      // Draw and update txs
+      solanaTxsRef.current = solanaTxsRef.current.filter(tx => {
+        if (tx.state === "incoming") {
+          solana.circle(tx.x, tx.y, 5);
+          solana.fill({ color: 0x60a5fa, alpha: 0.9 });
+          return true;
+        }
+
+        if (tx.state === "queued") {
+          solana.circle(tx.x, tx.y, 4);
+          solana.fill({ color: 0xfbbf24, alpha: 0.9 });
+          return true;
+        }
+
+        if (tx.state === "executing") {
+          tx.y += (tx.targetY - tx.y) * 0.15;
+          tx.x += 2;
+          tx.progress = (tx.x - solanaExecStart) / (solanaExecEnd - solanaExecStart);
+
+          solana.circle(tx.x, tx.y, 5);
+          solana.fill({ color: 0x22c55e, alpha: 0.9 });
+
+          // Trail
+          const trailLen = Math.min(tx.x - solanaExecStart, 40);
+          solana.rect(tx.x - trailLen, tx.y - 2, trailLen, 4);
+          solana.fill({ color: 0x22c55e, alpha: 0.3 });
+
+          if (tx.progress >= 1) {
+            tx.state = "done";
+            setSolanaConfirmed(prev => prev + 1);
+          }
+          return true;
+        }
+
+        if (tx.state === "dropped") {
+          tx.y += 3;
+          tx.x -= 1;
+          solana.circle(tx.x, tx.y, 4);
+          solana.fill({ color: 0xef4444, alpha: Math.max(0, 1 - (tx.y - height/2) / 200) });
+          return tx.y < height + 20;
+        }
+
+        return false;
+      });
     }
 
-    // Update text labels
-    const texts = textsRef.current;
-    if (texts.length >= 12) {
-      const compPadding = isMobile ? 15 : 30;
-      const boxWidth = (width - margin.left * 2 - compPadding * 3) / 2;
-      const aptosBoxX = margin.left + compPadding;
-      const ethBoxX = aptosBoxX + boxWidth + compPadding;
-      const boxY = comparisonY + 25;
+    // ===== APTOS =====
+    const aptos = graphicsRef.current.aptos;
+    if (aptos) {
+      aptos.clear();
 
-      // Responsive font sizes
-      const titleFontSize = isMobile ? 10 : 14;
-      const labelFontSize = isMobile ? 9 : 11;
-      const valueFontSize = isMobile ? 10 : 12;
-      const bigValueFontSize = isMobile ? 14 : 16;
-      const feeFontSize = isMobile ? 14 : 18;
-      const chainFontSize = isMobile ? 10 : 13;
+      // Dispatcher (no bottleneck visual)
+      aptos.roundRect(aptosDispatch - 12, 40, 24, height - 80, 6);
+      aptos.fill({ color: PIXI_COLORS.primary, alpha: 0.1 });
+      aptos.stroke({ color: PIXI_COLORS.primary, width: 2, alpha: 0.4 });
 
-      // Title - shortened for mobile
-      texts[0].style.fontSize = titleFontSize;
-      texts[0].text = isMobile ? "CAPACITY >> DEMAND" : "WHY FEES STAY FLAT: CAPACITY >> DEMAND";
-      texts[0].x = centerX;
-      texts[0].y = margin.top + 8;
-      texts[0].anchor.set(0.5, 0);
+      // Threads
+      for (let i = 0; i < CONFIG.aptosThreads; i++) {
+        const ty = 40 + i * aptosThreadHeight + aptosThreadHeight / 2;
+        aptos.roundRect(aptosExecStart, ty - 4, aptosExecEnd - aptosExecStart, 8, 3);
+        aptos.fill({ color: 0x1e293b });
+      }
 
-      // Capacity label
-      texts[1].style.fontSize = labelFontSize;
-      texts[1].x = margin.left + (isMobile ? 20 : 45);
-      texts[1].y = capacityY + 15;
+      // Process Aptos txs - straight through, no queue
+      aptosTxsRef.current = aptosTxsRef.current.filter(tx => {
+        if (tx.state === "incoming") {
+          tx.x += tx.speed;
+          if (tx.x >= aptosDispatch) {
+            tx.state = "executing";
+            tx.x = aptosExecStart;
+          }
+          aptos.circle(tx.x, tx.y, 5);
+          aptos.fill({ color: PIXI_COLORS.primary, alpha: 0.9 });
+          return true;
+        }
 
-      // Capacity value
-      texts[2].style.fontSize = valueFontSize;
-      texts[2].text = isMobile ? "160K TPS" : "160,000 TPS";
-      texts[2].x = width - margin.right - (isMobile ? 20 : 45);
-      texts[2].y = capacityY + 15;
-      texts[2].anchor.set(1, 0);
+        if (tx.state === "executing") {
+          tx.x += 2.5;
+          tx.progress = (tx.x - aptosExecStart) / (aptosExecEnd - aptosExecStart);
 
-      // Demand label
-      texts[3].style.fontSize = labelFontSize;
-      texts[3].text = isMobile ? `DEMAND: ${formatNumber(Math.round(demand))} TPS` : `CURRENT DEMAND: ${formatNumber(Math.round(demand))} TPS`;
-      texts[3].x = margin.left + (isMobile ? 20 : 45);
-      texts[3].y = capacityY + 38;
+          aptos.circle(tx.x, tx.y, 5);
+          aptos.fill({ color: PIXI_COLORS.primary, alpha: 0.9 });
 
-      // Utilization
-      texts[4].style.fontSize = bigValueFontSize;
-      texts[4].text = `${Math.round(util)}%`;
-      const barPadding = isMobile ? 25 : 40;
-      const barX = margin.left + barPadding;
-      const barWidth = width - margin.left * 2 - barPadding * 2;
-      const demandRatio = demand / CONFIG.aptosCapacity;
-      texts[4].x = barX + 5 + (barWidth - 10) * demandRatio / 2;
-      texts[4].y = capacityY + 82;
-      texts[4].anchor.set(0.5, 0.5);
+          // Trail
+          const trailLen = Math.min(tx.x - aptosExecStart, 40);
+          aptos.rect(tx.x - trailLen, tx.y - 2, trailLen, 4);
+          aptos.fill({ color: PIXI_COLORS.primary, alpha: 0.3 });
 
-      // Headroom label
-      texts[5].style.fontSize = labelFontSize;
-      texts[5].text = isMobile ? `${Math.round(100 - util)}% FREE` : `${Math.round(100 - util)}% HEADROOM`;
-      texts[5].x = width - margin.right - (isMobile ? 20 : 60);
-      texts[5].y = capacityY + capacitySection - 25;
-      texts[5].anchor.set(1, 0);
+          if (tx.progress >= 1) {
+            tx.state = "done";
+          }
+          return true;
+        }
 
-      // Aptos label
-      texts[6].style.fontSize = chainFontSize;
-      texts[6].x = aptosBoxX + 10;
-      texts[6].y = boxY + 10;
-
-      // ETH label
-      texts[7].style.fontSize = chainFontSize;
-      texts[7].text = isMobile ? "ETH (30 TPS)" : "ETH-STYLE (30 TPS)";
-      texts[7].x = ethBoxX + 10;
-      texts[7].y = boxY + 10;
-
-      // Aptos fee
-      texts[8].style.fontSize = feeFontSize;
-      texts[8].text = "$0.0001";
-      texts[8].x = aptosBoxX + boxWidth / 2;
-      texts[8].y = boxY + (isMobile ? 100 : 115);
-      texts[8].anchor.set(0.5, 0.5);
-
-      // ETH fee
-      texts[9].style.fontSize = feeFontSize;
-      const ethUtil = demand / CONFIG.ethCapacity;
-      const ethFee = ethUtil > 1 ? Math.min(ethUtil * 5, 200).toFixed(0) : "0.10";
-      texts[9].text = `$${ethFee}+`;
-      texts[9].x = ethBoxX + boxWidth / 2;
-      texts[9].y = boxY + (isMobile ? 100 : 115);
-      texts[9].anchor.set(0.5, 0.5);
-      texts[9].style.fill = ethUtil > 1 ? PIXI_COLORS.danger : 0x6b7280;
-
-      // Aptos status
-      texts[10].style.fontSize = isMobile ? 9 : 10;
-      texts[10].text = `${Math.round((demand / CONFIG.aptosCapacity) * 100)}% used`;
-      texts[10].x = aptosBoxX + boxWidth / 2;
-      texts[10].y = boxY + (isMobile ? 60 : 70);
-      texts[10].anchor.set(0.5, 0.5);
-
-      // ETH status
-      texts[11].style.fontSize = isMobile ? 9 : 10;
-      const ethPercent = Math.round((demand / CONFIG.ethCapacity) * 100);
-      texts[11].text = ethPercent > 100 ? `${ethPercent.toLocaleString()}% OVER` : `${ethPercent}% used`;
-      texts[11].x = ethBoxX + boxWidth / 2;
-      texts[11].y = boxY + (isMobile ? 60 : 70);
-      texts[11].anchor.set(0.5, 0.5);
-      texts[11].style.fill = ethPercent > 100 ? PIXI_COLORS.danger : 0x9ca3af;
+        return false;
+      });
     }
   }, []);
 
@@ -585,7 +376,7 @@ export const StableFeesStress = memo(function StableFeesStress({
     await app.init({
       width: rect.width,
       height: rect.height,
-      backgroundColor: PIXI_COLORS.background,
+      backgroundColor: 0x0a0a0f,
       antialias: true,
       resolution: window.devicePixelRatio || 1,
       autoDensity: true,
@@ -595,86 +386,21 @@ export const StableFeesStress = memo(function StableFeesStress({
     appRef.current = app;
 
     graphicsRef.current = {
-      background: new Graphics(),
-      capacityBar: new Graphics(),
-      demandBar: new Graphics(),
-      comparison: new Graphics(),
-      particles: new Graphics(),
-      effects: new Graphics(),
+      bg: new Graphics(),
+      solana: new Graphics(),
+      aptos: new Graphics(),
     };
 
-    app.stage.addChild(graphicsRef.current.background!);
-    app.stage.addChild(graphicsRef.current.capacityBar!);
-    app.stage.addChild(graphicsRef.current.comparison!);
-    app.stage.addChild(graphicsRef.current.particles!);
-    app.stage.addChild(graphicsRef.current.effects!);
-
-    // Text styles
-    const titleStyle = new TextStyle({
-      fontFamily: "system-ui, -apple-system, sans-serif",
-      fontSize: 14,
-      fontWeight: "700",
-      fill: 0xffffff,
-      letterSpacing: 1,
-    });
-
-    const labelStyle = new TextStyle({
-      fontFamily: "system-ui, -apple-system, sans-serif",
-      fontSize: 11,
-      fontWeight: "600",
-      fill: 0x9ca3af,
-    });
-
-    const valueStyle = new TextStyle({
-      fontFamily: "system-ui, -apple-system, sans-serif",
-      fontSize: 12,
-      fontWeight: "700",
-      fill: PIXI_COLORS.primary,
-    });
-
-    const bigValueStyle = new TextStyle({
-      fontFamily: "system-ui, -apple-system, sans-serif",
-      fontSize: 16,
-      fontWeight: "800",
-      fill: 0xffffff,
-    });
-
-    const chainLabelStyle = new TextStyle({
-      fontFamily: "system-ui, -apple-system, sans-serif",
-      fontSize: 13,
-      fontWeight: "700",
-      fill: PIXI_COLORS.primary,
-    });
-
-    const feeStyle = new TextStyle({
-      fontFamily: "system-ui, -apple-system, sans-serif",
-      fontSize: 18,
-      fontWeight: "800",
-      fill: PIXI_COLORS.primary,
-    });
-
-    textsRef.current = [
-      new Text({ text: "WHY FEES STAY FLAT: CAPACITY >> DEMAND", style: titleStyle }),
-      new Text({ text: "BLOCK-STM CAPACITY", style: labelStyle }),
-      new Text({ text: "160,000 TPS", style: valueStyle }),
-      new Text({ text: "CURRENT DEMAND: 5,000 TPS", style: labelStyle }),
-      new Text({ text: "3%", style: bigValueStyle }),
-      new Text({ text: "97% HEADROOM", style: { ...labelStyle, fill: PIXI_COLORS.primary } }),
-      new Text({ text: "APTOS", style: chainLabelStyle }),
-      new Text({ text: "ETH-STYLE (30 TPS)", style: { ...chainLabelStyle, fill: 0x6b7280 } }),
-      new Text({ text: "$0.0001", style: feeStyle }),
-      new Text({ text: "$0.10", style: { ...feeStyle, fill: 0x6b7280 } }),
-      new Text({ text: "3% utilized", style: { ...labelStyle, fontSize: 10 } }),
-      new Text({ text: "16,667% OVERLOADED", style: { ...labelStyle, fontSize: 10, fill: PIXI_COLORS.danger } }),
-    ];
-
-    textsRef.current.forEach((t) => app.stage.addChild(t));
+    app.stage.addChild(graphicsRef.current.bg!);
+    app.stage.addChild(graphicsRef.current.solana!);
+    app.stage.addChild(graphicsRef.current.aptos!);
 
     startTimeRef.current = performance.now();
     mountedRef.current = true;
     setIsReady(true);
 
     app.ticker.add(updateAnimation);
+    app.ticker.start();
   }, [updateAnimation]);
 
   useEffect(() => {
@@ -695,11 +421,8 @@ export const StableFeesStress = memo(function StableFeesStress({
     });
     resizeObserver.observe(container);
 
-    // Small delay to ensure DOM is ready
     const initTimeout = setTimeout(() => {
-      if (!appRef.current && !initAttemptedRef.current) {
-        initPixi();
-      }
+      if (!appRef.current && !initAttemptedRef.current) initPixi();
     }, 100);
 
     initPixi();
@@ -709,27 +432,13 @@ export const StableFeesStress = memo(function StableFeesStress({
       clearTimeout(initTimeout);
       resizeObserver.disconnect();
       if (appRef.current) {
-        // Stop ticker to prevent render during cleanup
         appRef.current.ticker.stop();
-
         const canvas = appRef.current.canvas as HTMLCanvasElement;
-        try {
-          appRef.current.destroy(true, { children: true });
-        } catch {
-          // Ignore cleanup errors during HMR
-        }
+        try { appRef.current.destroy(true, { children: true }); } catch {}
         if (canvas && container.contains(canvas)) container.removeChild(canvas);
         appRef.current = null;
       }
-      graphicsRef.current = {
-        background: null,
-        capacityBar: null,
-        demandBar: null,
-        comparison: null,
-        particles: null,
-        effects: null,
-      };
-      textsRef.current = [];
+      graphicsRef.current = { bg: null, solana: null, aptos: null };
       initAttemptedRef.current = false;
       setIsReady(false);
     };
@@ -737,108 +446,114 @@ export const StableFeesStress = memo(function StableFeesStress({
 
   useEffect(() => {
     if (!appRef.current) return;
-    if (isVisible && isPlaying) {
-      appRef.current.ticker.start();
-      // Force a redraw when becoming visible
-      updateAnimation();
-    } else {
-      appRef.current.ticker.stop();
-    }
-  }, [isVisible, isPlaying, updateAnimation]);
+    if (isVisible) appRef.current.ticker.start();
+    else appRef.current.ticker.stop();
+  }, [isVisible]);
 
-  const handlePlayPause = () => {
-    const newState = !isPlaying;
-    setIsPlaying(newState);
-    if (newState) {
-      startTimeRef.current = performance.now();
-      particlesRef.current = [];
-    }
-  };
+  const totalSolana = solanaConfirmed + solanaDropped;
+  const dropRate = totalSolana > 0 ? Math.round((solanaDropped / totalSolana) * 100) : 0;
 
-  const handleRestart = () => {
-    startTimeRef.current = performance.now();
-    particlesRef.current = [];
-    setIsPlaying(true);
-  };
+  // TPS color coding
+  const tpsColor = currentTPS >= 30000 ? "#ef4444"
+    : currentTPS >= 20000 ? "#f97316"
+    : currentTPS >= 10000 ? "#fbbf24"
+    : "#22c55e";
 
   return (
     <div className={`chrome-card p-4 sm:p-6 ${className || ""}`}>
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h3 className="section-title">The Real Reason Fees Stay Flat</h3>
-          <p className="text-xs" style={{ color: "var(--chrome-500)" }}>
-            Block-STM provides 5000x more capacity than needed
-          </p>
+      <div className="mb-4">
+        <h3 className="section-title">Transaction Flow Under Load</h3>
+        <p className="text-xs" style={{ color: "var(--chrome-500)" }}>
+          How each chain handles increasing transaction demand
+        </p>
+      </div>
+
+      {/* Stats */}
+      <div className="grid grid-cols-4 gap-3 mb-4 text-center text-xs">
+        <div className="p-3 rounded-lg" style={{ backgroundColor: `${tpsColor}15`, border: `1px solid ${tpsColor}40` }}>
+          <div className="text-xl font-bold" style={{ color: tpsColor }}>{(currentTPS / 1000).toFixed(0)}K</div>
+          <div className="text-[10px] mt-1 mb-2" style={{ color: "var(--chrome-500)" }}>TPS Demand</div>
+          {/* TPS Gauge */}
+          <div className="h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: "rgba(255,255,255,0.1)" }}>
+            <div
+              className="h-full rounded-full transition-all duration-300"
+              style={{
+                width: `${Math.min(100, (currentTPS / 30000) * 100)}%`,
+                backgroundColor: tpsColor,
+              }}
+            />
+          </div>
+          <div className="flex justify-between mt-1 text-[8px]" style={{ color: "var(--chrome-600)" }}>
+            <span>0</span>
+            <span>30K</span>
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            onClick={handlePlayPause}
-            className="px-3 py-1 text-sm rounded border transition-colors hover:bg-white/5"
-            style={{ borderColor: "var(--chrome-700)", color: "var(--chrome-300)" }}
-          >
-            {isPlaying ? "Pause" : "Play"}
-          </button>
-          <button
-            onClick={handleRestart}
-            className="px-3 py-1 text-sm rounded border transition-colors hover:bg-white/5"
-            style={{ borderColor: "var(--chrome-700)", color: "var(--chrome-300)" }}
-          >
-            Restart
-          </button>
+        <div className="p-3 rounded-lg" style={{ backgroundColor: "rgba(96, 165, 250, 0.1)", border: "1px solid rgba(96, 165, 250, 0.2)" }}>
+          <div className="text-xl font-bold" style={{ color: "#60a5fa" }}>{solanaConfirmed}</div>
+          <div className="text-[10px] mt-1" style={{ color: "var(--chrome-500)" }}>Solana Processed</div>
+        </div>
+        <div className="p-3 rounded-lg" style={{ backgroundColor: solanaDropped > 0 ? "rgba(239, 68, 68, 0.15)" : "rgba(255,255,255,0.03)", border: `1px solid ${solanaDropped > 0 ? "rgba(239, 68, 68, 0.3)" : "rgba(255,255,255,0.05)"}` }}>
+          <div className="text-xl font-bold" style={{ color: solanaDropped > 0 ? "#ef4444" : "#6b7280" }}>{solanaDropped}</div>
+          <div className="text-[10px] mt-1" style={{ color: "var(--chrome-500)" }}>Solana Dropped</div>
+        </div>
+        <div className="p-3 rounded-lg" style={{ backgroundColor: dropRate > 10 ? "rgba(239, 68, 68, 0.15)" : "rgba(255,255,255,0.03)", border: `1px solid ${dropRate > 10 ? "rgba(239, 68, 68, 0.3)" : "rgba(255,255,255,0.05)"}` }}>
+          <div className="text-xl font-bold" style={{ color: dropRate > 10 ? "#ef4444" : dropRate > 0 ? "#fbbf24" : "#22c55e" }}>{dropRate}%</div>
+          <div className="text-[10px] mt-1" style={{ color: "var(--chrome-500)" }}>Drop Rate</div>
         </div>
       </div>
 
-      <div className="metric-grid grid-cols-3 mb-4">
-        <div className="metric-cell">
-          <div className="stat-value text-xl sm:text-2xl" style={{ color: "var(--accent)" }}>
-            {formatNumber(currentDemand)} TPS
-          </div>
-          <div className="stat-label">Current Demand</div>
-        </div>
-        <div className="metric-cell">
-          <div className="stat-value text-xl sm:text-2xl" style={{ color: utilization < 80 ? "var(--accent)" : "#f59e0b" }}>
-            {utilization}%
-          </div>
-          <div className="stat-label">Capacity Used</div>
-        </div>
-        <div className="metric-cell">
-          <div className="stat-value text-xl sm:text-2xl" style={{ color: "var(--accent)" }}>
-            $0.0001
-          </div>
-          <div className="stat-label">Fee (always)</div>
-        </div>
-      </div>
-
-      <div
-        ref={containerRef}
-        className="canvas-wrap relative rounded-lg overflow-hidden"
-        style={{ height: "500px", backgroundColor: "#0a0a0b" }}
-      >
-        {!isReady && (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <div className="text-sm" style={{ color: "var(--chrome-500)" }}>
-              Loading visualization...
+      {/* Canvas */}
+      <div className="relative">
+        <div
+          ref={containerRef}
+          className="canvas-wrap relative rounded-lg overflow-hidden"
+          style={{ height: "340px", backgroundColor: "#0a0a0f" }}
+        >
+          {!isReady && (
+            <div className="absolute inset-0 flex items-center justify-center">
+              <div className="text-sm" style={{ color: "var(--chrome-500)" }}>Loading...</div>
             </div>
-          </div>
+          )}
+        </div>
+
+        {/* Labels */}
+        {isReady && (
+          <>
+            <div className="absolute top-3 left-4 flex items-center gap-2">
+              <span className="text-[11px] font-bold" style={{ color: "#60a5fa" }}>SOLANA</span>
+              <span className="text-[9px] px-1.5 py-0.5 rounded" style={{ backgroundColor: "rgba(96, 165, 250, 0.2)", color: "#93c5fd" }}>
+                Queue → 4 threads
+              </span>
+            </div>
+            <div className="absolute top-3 right-4 flex items-center gap-2">
+              <span className="text-[9px] px-1.5 py-0.5 rounded" style={{ backgroundColor: "rgba(0, 217, 165, 0.2)", color: "#00D9A5" }}>
+                Parallel 12 threads
+              </span>
+              <span className="text-[11px] font-bold" style={{ color: "#00D9A5" }}>APTOS</span>
+            </div>
+          </>
         )}
       </div>
 
-      <div className="mt-4 p-4 rounded-lg" style={{ backgroundColor: "rgba(0, 217, 165, 0.08)", border: "1px solid rgba(0, 217, 165, 0.2)" }}>
-        <h4 className="text-sm font-bold mb-2" style={{ color: "var(--accent)" }}>
-          The Secret: Block-STM Parallel Execution
-        </h4>
-        <p className="text-xs mb-2" style={{ color: "var(--chrome-400)" }}>
-          Aptos doesn&apos;t use fancy fee market tricks. It &quot;solves&quot; fee stability by having so much capacity that congestion rarely happens:
-        </p>
-        <div className="grid grid-cols-2 gap-3 text-xs">
-          <div className="p-2 rounded" style={{ backgroundColor: "rgba(0, 217, 165, 0.1)" }}>
-            <div className="font-bold" style={{ color: "var(--accent)" }}>Block-STM</div>
-            <div style={{ color: "var(--chrome-400)" }}>160,000+ TPS capacity via parallel execution</div>
-          </div>
-          <div className="p-2 rounded" style={{ backgroundColor: "rgba(255, 255, 255, 0.05)" }}>
-            <div className="font-bold" style={{ color: "var(--chrome-300)" }}>Governance Floor</div>
-            <div style={{ color: "var(--chrome-400)" }}>Fixed minimum: 100 octas/gas (no auto-increase)</div>
-          </div>
+      {/* Explanation */}
+      <div className="grid grid-cols-2 gap-3 mt-4 text-xs">
+        <div className="p-3 rounded-lg" style={{ backgroundColor: "rgba(96, 165, 250, 0.05)", border: "1px solid rgba(96, 165, 250, 0.15)" }}>
+          <div className="font-semibold mb-2" style={{ color: "#60a5fa" }}>Solana Under Load</div>
+          <ul className="space-y-1" style={{ color: "var(--chrome-400)" }}>
+            <li>• Transactions queue at scheduler</li>
+            <li>• 4-6 execution threads process queue</li>
+            <li>• Heavy load → 15-30% drops</li>
+            <li>• Dropped txs must be retried</li>
+          </ul>
+        </div>
+        <div className="p-3 rounded-lg" style={{ backgroundColor: "rgba(0, 217, 165, 0.05)", border: "1px solid rgba(0, 217, 165, 0.15)" }}>
+          <div className="font-semibold mb-2" style={{ color: "#00D9A5" }}>Aptos Parallel Execution</div>
+          <ul className="space-y-1" style={{ color: "var(--chrome-400)" }}>
+            <li>• Block-STM: no scheduling queue</li>
+            <li>• 32+ threads execute in parallel</li>
+            <li>• Handles load without drops</li>
+            <li>• Conflicts resolved automatically</li>
+          </ul>
         </div>
       </div>
     </div>

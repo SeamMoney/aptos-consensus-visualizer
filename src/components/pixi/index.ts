@@ -8,3 +8,4 @@ export { BlockSTMExplainer } from "./block-stm-explainer";
 export { FeeMarketExplainer } from "./fee-market-explainer";
 export { PerpDexScenario } from "./perp-dex-scenario";
 export { EncryptedMempool } from "./encrypted-mempool";
+export { LiveGasChart } from "./live-gas-chart";

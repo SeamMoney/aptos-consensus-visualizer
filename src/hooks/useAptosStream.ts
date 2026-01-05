@@ -3,12 +3,20 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useNetwork, Network } from "@/contexts/NetworkContext";
 
+export interface GasPriceStats {
+  min: number;
+  max: number;
+  median: number;
+  count: number;
+}
+
 export interface BlockStats {
   blockHeight: number;
   txCount: number;
   timestamp: number;
   blockTimeMs: number;
   gasUsed: number;
+  gasStats?: GasPriceStats;
   proposer?: string;
   round?: number;
   epoch?: number;
@@ -103,9 +111,10 @@ async function fetchValidatorSet(apiBase: string, network: Network) {
   return res.json();
 }
 
-// Parse block metadata from transactions
+// Parse block metadata and gas stats from transactions
 function parseBlockMetadata(block: any): Partial<BlockStats> {
   const metadata: Partial<BlockStats> = {};
+  const gasPrices: number[] = [];
 
   if (block.transactions) {
     for (const tx of block.transactions) {
@@ -115,9 +124,23 @@ function parseBlockMetadata(block: any): Partial<BlockStats> {
         metadata.epoch = parseInt(tx.epoch || '0');
         metadata.votesBitvec = tx.previous_block_votes_bitvec;
         metadata.failedProposers = tx.failed_proposer_indices?.map((i: string) => parseInt(i)) || [];
-        break;
+      }
+      // Extract gas prices from user transactions
+      if (tx.type === 'user_transaction' && tx.gas_unit_price) {
+        gasPrices.push(parseInt(tx.gas_unit_price));
       }
     }
+  }
+
+  // Calculate gas price stats if we have user transactions
+  if (gasPrices.length > 0) {
+    const sorted = [...gasPrices].sort((a, b) => a - b);
+    metadata.gasStats = {
+      min: sorted[0],
+      max: sorted[sorted.length - 1],
+      median: sorted[Math.floor(sorted.length / 2)],
+      count: gasPrices.length,
+    };
   }
 
   return metadata;

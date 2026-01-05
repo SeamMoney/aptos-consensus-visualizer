@@ -5,7 +5,7 @@ import { Providers } from "./providers";
 
 const inter = Inter({ subsets: ["latin"] });
 
-export const baiJamjuree = Bai_Jamjuree({
+const baiJamjuree = Bai_Jamjuree({
   weight: ['400', '500', '600', '700'],
   subsets: ["latin"],
   variable: '--font-bai-jamjuree',
@@ -102,14 +102,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <head>
         <script
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
         />
       </head>
-      <body className={`${inter.className} ${baiJamjuree.variable}`}>
+      <body className={`${inter.className} ${baiJamjuree.variable}`} suppressHydrationWarning>
         <Providers>{children}</Providers>
       </body>
     </html>

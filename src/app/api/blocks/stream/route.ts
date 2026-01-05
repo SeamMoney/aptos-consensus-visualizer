@@ -107,11 +107,24 @@ export async function GET(request: Request) {
             }
 
             let gasUsed = 0;
+            const gasPrices: number[] = [];
             if (block.transactions) {
               for (const tx of block.transactions as any[]) {
                 if (tx.gas_used) gasUsed += parseInt(tx.gas_used);
+                // Extract gas prices from user transactions
+                if (tx.type === "user_transaction" && tx.gas_unit_price) {
+                  gasPrices.push(parseInt(tx.gas_unit_price));
+                }
               }
             }
+
+            // Calculate gas price stats for this block
+            const gasStats = gasPrices.length > 0 ? {
+              min: Math.min(...gasPrices),
+              max: Math.max(...gasPrices),
+              median: gasPrices.sort((a, b) => a - b)[Math.floor(gasPrices.length / 2)],
+              count: gasPrices.length,
+            } : null;
 
             const metadata = parseBlockMetadata(block);
             const newBlock: BlockStats = {
@@ -120,6 +133,7 @@ export async function GET(request: Request) {
               timestamp,
               blockTimeMs,
               gasUsed,
+              gasStats: gasStats || undefined,
               ...metadata,
             };
 
