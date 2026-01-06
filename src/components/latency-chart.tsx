@@ -16,7 +16,7 @@ export const LatencyChart = memo(function LatencyChart({ avgBlockTime }: Latency
   const isVisible = useVisibility(containerRef);
   const { network } = useNetwork();
 
-  const { dataPoints, currentP50, currentP95, stats } = useLatencyStorage(avgBlockTime, network);
+  const { dataPoints, currentLatency, currentP50, currentP95, stats } = useLatencyStorage(avgBlockTime, network);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -26,7 +26,7 @@ export const LatencyChart = memo(function LatencyChart({ avgBlockTime }: Latency
     if (!ctx) return;
 
     let lastTime = 0;
-    const targetFPS = 10;
+    const targetFPS = 30; // Higher FPS for smooth real-time feel
     const frameInterval = 1000 / targetFPS;
 
     const render = (timestamp: number) => {
@@ -123,16 +123,35 @@ export const LatencyChart = memo(function LatencyChart({ avgBlockTime }: Latency
 
         ctx.stroke();
 
-        // Current point
-        const last = dataPoints[dataPoints.length - 1];
+        // Live current point with pulsing glow
         const cx = chartRight;
-        const clampedLast = Math.max(yMin, Math.min(yMax, last.e2eLatencyMs));
-        const cy = chartBottom - ((clampedLast - yMin) / yRange) * chartHeight;
+        const clampedLive = Math.max(yMin, Math.min(yMax, currentLatency));
+        const cy = chartBottom - ((clampedLive - yMin) / yRange) * chartHeight;
 
+        // Pulsing glow effect
+        const pulse = Math.sin(timestamp / 300) * 0.3 + 0.7; // 0.4 to 1.0
+        const glowRadius = 12 * pulse;
+
+        // Outer glow
+        const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowRadius);
+        gradient.addColorStop(0, `rgba(0, 217, 165, ${0.6 * pulse})`);
+        gradient.addColorStop(1, "rgba(0, 217, 165, 0)");
+        ctx.beginPath();
+        ctx.fillStyle = gradient;
+        ctx.arc(cx, cy, glowRadius, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Solid center point
         ctx.beginPath();
         ctx.fillStyle = "#00D9A5";
         ctx.arc(cx, cy, 5, 0, Math.PI * 2);
         ctx.fill();
+
+        // Live value label next to point
+        ctx.fillStyle = "#00D9A5";
+        ctx.font = "bold 11px monospace";
+        ctx.textAlign = "right";
+        ctx.fillText(`${currentLatency}ms`, cx - 10, cy - 10);
       } else {
         ctx.fillStyle = "rgba(255, 255, 255, 0.3)";
         ctx.font = "12px monospace";
@@ -140,26 +159,22 @@ export const LatencyChart = memo(function LatencyChart({ avgBlockTime }: Latency
         ctx.fillText("Collecting latency data...", width / 2, height / 2);
       }
 
-      // X-axis labels
+      // X-axis labels - show "Xm ago" format for real-time feel
       if (dataPoints.length > 0) {
         ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
         ctx.font = "10px monospace";
         ctx.textAlign = "center";
 
-        const oldest = new Date(dataPoints[0].timestamp);
-        const newest = new Date(dataPoints[dataPoints.length - 1].timestamp);
+        const now = Date.now();
+        const oldest = dataPoints[0].timestamp;
+        const minutesAgo = Math.round((now - oldest) / 60000);
 
-        const fmt = (d: Date) => {
-          const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
-          const date = `${d.getMonth() + 1}/${d.getDate()}`;
-          return `${time}\n${date}`;
-        };
+        // Left label: oldest data point
+        ctx.fillText(`${minutesAgo}m ago`, chartLeft + 30, chartBottom + 20);
 
-        ctx.fillText(fmt(oldest).split('\n')[0], chartLeft + 40, chartBottom + 16);
-        ctx.fillText(fmt(oldest).split('\n')[1], chartLeft + 40, chartBottom + 30);
-
-        ctx.fillText(fmt(newest).split('\n')[0], chartRight - 40, chartBottom + 16);
-        ctx.fillText(fmt(newest).split('\n')[1], chartRight - 40, chartBottom + 30);
+        // Right label: "now" with live indicator
+        ctx.fillStyle = "#00D9A5";
+        ctx.fillText("now", chartRight - 20, chartBottom + 20);
       }
 
       // Title
@@ -174,7 +189,7 @@ export const LatencyChart = memo(function LatencyChart({ avgBlockTime }: Latency
     animationRef.current = requestAnimationFrame(render);
 
     return () => cancelAnimationFrame(animationRef.current);
-  }, [dataPoints, isVisible]);
+  }, [dataPoints, currentLatency, isVisible]);
 
   return (
     <div ref={containerRef} className="chrome-card p-4">
@@ -192,8 +207,11 @@ export const LatencyChart = memo(function LatencyChart({ avgBlockTime }: Latency
           <span style={{ color: "var(--chrome-500)" }}>
             p95: <span style={{ color: "#00D9A5" }}>{currentP95}ms</span>
           </span>
-          <span style={{ color: "#00D9A5", fontWeight: "bold" }}>
-            ~{Math.round(avgBlockTime * 5)}ms
+          <span className="flex items-center gap-1.5">
+            <span className="live-badge" style={{ width: 6, height: 6 }} />
+            <span style={{ color: "#00D9A5", fontWeight: "bold" }}>
+              {currentLatency}ms
+            </span>
           </span>
         </div>
       </div>

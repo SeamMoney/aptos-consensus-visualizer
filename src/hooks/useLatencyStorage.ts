@@ -4,9 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { Network } from "@/contexts/NetworkContext";
 
 const E2E_MULTIPLIER = 5; // Raptr 4-hop consensus
-const SAMPLE_INTERVAL_MS = 60000; // Sample every 60 seconds (1 minute)
-const STORAGE_KEY_PREFIX = "aptos-latency-v5"; // v5 = network-aware
-const MAX_POINTS = 120; // ~2 hours at 1-minute intervals
+const SAMPLE_INTERVAL_MS = 3000; // Sample every 3 seconds for real-time feel
+const STORAGE_KEY_PREFIX = "aptos-latency-v6"; // v6 = real-time updates
+const MAX_POINTS = 200; // ~10 minutes at 3-second intervals
 
 function getStorageKey(network: Network): string {
   return `${STORAGE_KEY_PREFIX}-${network}`;
@@ -19,6 +19,7 @@ export interface LatencyDataPoint {
 
 export interface LatencyStorageResult {
   dataPoints: LatencyDataPoint[];
+  currentLatency: number; // Live value that updates every render
   currentP50: number;
   currentP95: number;
   stats: {
@@ -36,17 +37,17 @@ function calculatePercentile(values: number[], percentile: number): number {
   return sorted[Math.max(0, index)];
 }
 
-// Generate initial baseline data (simulates ~2 hours of history)
+// Generate initial baseline data (simulates ~10 minutes of history at 3s intervals)
 function generateBaselineData(): LatencyDataPoint[] {
   const points: LatencyDataPoint[] = [];
   const now = Date.now();
   const baseLatency = 470; // Typical E2E latency
 
-  // Generate points going back 2 hours at 1-minute intervals
+  // Generate points going back ~10 minutes at 3-second intervals
   for (let i = MAX_POINTS - 1; i >= 0; i--) {
-    const timestamp = now - (i * 60000); // 1 minute apart
-    // Add small natural variation (±5ms)
-    const variation = (Math.random() - 0.5) * 10;
+    const timestamp = now - (i * SAMPLE_INTERVAL_MS);
+    // Add small natural variation (±8ms) for realistic look
+    const variation = (Math.random() - 0.5) * 16;
     points.push({
       timestamp,
       e2eLatencyMs: Math.round(baseLatency + variation),
@@ -66,9 +67,9 @@ function loadFromStorage(network: Network): LatencyDataPoint[] {
 
     const data = JSON.parse(stored) as LatencyDataPoint[];
 
-    // Filter out data older than 3 hours
-    const threeHoursAgo = Date.now() - (3 * 60 * 60 * 1000);
-    return data.filter(p => p.timestamp > threeHoursAgo);
+    // Filter out data older than 15 minutes (keep recent for real-time view)
+    const fifteenMinutesAgo = Date.now() - (15 * 60 * 1000);
+    return data.filter(p => p.timestamp > fifteenMinutesAgo);
   } catch {
     return [];
   }
@@ -140,12 +141,15 @@ export function useLatencyStorage(
 
   const allLatencies = dataPoints.map((p) => p.e2eLatencyMs);
 
+  // Live current latency - updates immediately when avgBlockTime changes
+  const currentLatency = Math.round(avgBlockTime * E2E_MULTIPLIER) || 470;
+
   const currentP50 = allLatencies.length > 0
     ? calculatePercentile(allLatencies, 50)
-    : Math.round(avgBlockTime * E2E_MULTIPLIER) || 470;
+    : currentLatency;
   const currentP95 = allLatencies.length > 0
     ? calculatePercentile(allLatencies, 95)
-    : Math.round((avgBlockTime * E2E_MULTIPLIER) * 1.05) || 490;
+    : Math.round(currentLatency * 1.05);
 
   const stats = {
     min: allLatencies.length > 0 ? Math.min(...allLatencies) : 0,
@@ -158,6 +162,7 @@ export function useLatencyStorage(
 
   return {
     dataPoints,
+    currentLatency,
     currentP50,
     currentP95,
     stats,
