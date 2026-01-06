@@ -494,9 +494,9 @@ export function useAptosStream() {
           const waitMs = e.retryAfter * 1000;
           rateLimitedUntilRef.current = Date.now() + waitMs;
           baseIntervalRef.current = Math.max(baseIntervalRef.current, 2000); // At least 2s between polls
-          // Don't immediately disconnect on rate limit - only if we have no recent data
+          // Don't disconnect on rate limit if we have recent data (< 30s old)
           const hasRecentData = blocksRef.current.length > 0 &&
-            (Date.now() - lastSuccessTimeRef.current) < 10000;
+            (Date.now() - lastSuccessTimeRef.current) < 30000;
           if (!hasRecentData) {
             setConnected(false);
             setError(`Rate limited. Waiting ${e.retryAfter}s...`);
@@ -505,14 +505,16 @@ export function useAptosStream() {
           console.error('Poll error:', e);
           errorCountRef.current++;
 
-          // After 3 consecutive errors, mark as disconnected
-          if (errorCountRef.current >= 3) {
+          // After 5 consecutive errors AND no recent data, mark as disconnected
+          const hasRecentData = blocksRef.current.length > 0 &&
+            (Date.now() - lastSuccessTimeRef.current) < 30000;
+          if (errorCountRef.current >= 5 && !hasRecentData) {
             setConnected(false);
             setError('Connection issues. Retrying...');
           }
 
-          // Exponential backoff on errors (max 10 seconds)
-          baseIntervalRef.current = Math.min(baseIntervalRef.current * 1.5, 10000);
+          // Exponential backoff on errors (max 5 seconds to recover faster)
+          baseIntervalRef.current = Math.min(baseIntervalRef.current * 1.3, 5000);
         }
       } finally {
         isPollingRef.current = false;
@@ -534,13 +536,15 @@ export function useAptosStream() {
     // Initial poll after short delay
     pollIntervalRef.current = setTimeout(runPoll, 500);
 
-    // Stale data check every 5 seconds
+    // Stale data check every 10 seconds (less aggressive)
     const staleCheckInterval = setInterval(() => {
       const timeSinceLastSuccess = Date.now() - lastSuccessTimeRef.current;
-      if (timeSinceLastSuccess > 15000 && Date.now() >= rateLimitedUntilRef.current) {
+      // Only show stale warning after 45 seconds of no data
+      if (timeSinceLastSuccess > 45000 && Date.now() >= rateLimitedUntilRef.current) {
         setError('Data may be stale. Reconnecting...');
+        setConnected(false);
       }
-    }, 5000);
+    }, 10000);
 
     return () => {
       clearInterval(staleCheckInterval);
