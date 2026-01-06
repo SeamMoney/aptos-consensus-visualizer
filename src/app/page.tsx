@@ -55,16 +55,7 @@ export default function Home() {
               Learn how Aptos processes 160,000+ transactions per second
             </p>
           </div>
-          <div className="flex items-center gap-3">
-            <Link
-              href="/globe"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 ring-1 ring-purple-500/30 text-purple-400 text-xs transition-colors"
-            >
-              <span className="text-base">🌐</span>
-              <span className="hidden sm:inline">3D Globe</span>
-            </Link>
-            <NetworkSelector connected={connected} />
-          </div>
+          <NetworkSelector connected={connected} />
         </header>
 
         {/* Block Stream - Live block production */}
@@ -72,14 +63,14 @@ export default function Home() {
           <BlockStream />
         </section>
 
-        {/* TPS Race - Chain comparison with flowing particles */}
-        <section className="mb-4">
-          <TpsRace />
-        </section>
-
         {/* Latency Chart - Historical E2E latency like Grafana */}
         <section className="mb-4">
           <LatencyChart avgBlockTime={stats.avgBlockTime} />
+        </section>
+
+        {/* TPS Race - Chain comparison with flowing particles */}
+        <section className="mb-4">
+          <TpsRace />
         </section>
 
         {/* Consensus Rounds Chart - Shows how fast consensus is progressing */}

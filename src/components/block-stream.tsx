@@ -11,7 +11,7 @@ interface GridBlock {
   txCount: number;
 }
 
-// Color based on transaction count - more granular gradient
+// Color based on transaction count - extended gradient for high TPS (up to 500+ tx)
 function getBlockColor(txCount: number): string {
   if (txCount === 0) return "#1e1e22";
   if (txCount === 1) return "#1a3020";
@@ -19,17 +19,22 @@ function getBlockColor(txCount: number): string {
   if (txCount <= 5) return "#1a4530";
   if (txCount <= 10) return "#1a4d3a";
   if (txCount <= 20) return "#00704a";
-  if (txCount <= 30) return "#00875a";
-  if (txCount <= 50) return "#00a86b";
-  if (txCount <= 80) return "#00c77b";
-  if (txCount <= 120) return "#00d98a";
-  return "#00f5a0"; // Bright for 120+ tx
+  if (txCount <= 40) return "#00875a";
+  if (txCount <= 70) return "#00a86b";
+  if (txCount <= 100) return "#00c77b";
+  if (txCount <= 150) return "#00d98a";
+  if (txCount <= 200) return "#00e593";
+  if (txCount <= 300) return "#00f0a0";
+  if (txCount <= 400) return "#20ffaa";
+  if (txCount <= 500) return "#50ffb5";
+  return "#80ffc0"; // Ultra bright for 500+ tx
 }
 
 // Get text color that contrasts with block color
 function getTextColor(txCount: number): string {
   if (txCount <= 10) return "rgba(255, 255, 255, 0.5)";
-  return "rgba(0, 0, 0, 0.7)";
+  if (txCount <= 100) return "rgba(0, 0, 0, 0.7)";
+  return "rgba(0, 0, 0, 0.85)"; // Darker for ultra-bright backgrounds
 }
 
 export const BlockStream = memo(function BlockStream() {
@@ -236,10 +241,14 @@ export const BlockStream = memo(function BlockStream() {
           ctx.fillStyle = getBlockColor(block.txCount);
           ctx.fillRect(x, y, w, h);
 
-          // Show tx count inside block - adaptive font size
+          // Show tx count inside block - adaptive font size for 1-3+ digit numbers
           if (block.txCount > 0) {
             ctx.fillStyle = getTextColor(block.txCount);
-            const fontSize = Math.max(6, Math.min(10, Math.min(w, h) - 4));
+            const digits = String(block.txCount).length;
+            // Scale font smaller for more digits: 1-2 digits normal, 3+ digits compressed
+            const baseSize = Math.min(w, h) - 4;
+            const digitScale = digits >= 3 ? 0.65 : digits === 2 ? 0.85 : 1;
+            const fontSize = Math.max(5, Math.min(10, baseSize * digitScale));
             ctx.font = `bold ${fontSize}px monospace`;
             ctx.textAlign = "center";
             ctx.textBaseline = "middle";
@@ -328,19 +337,23 @@ export const BlockStream = memo(function BlockStream() {
         <div className="flex flex-wrap items-center gap-2 sm:gap-4">
           <span className="flex items-center gap-1.5">
             <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#1a4d3a" }} />
-            1-10 tx
+            1-20 tx
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#00875a" }} />
-            10-30 tx
+            <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#00a86b" }} />
+            20-100 tx
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#00c77b" }} />
-            30-80 tx
+            <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#00e593" }} />
+            100-200 tx
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#00f5a0" }} />
-            80+ tx
+            <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#50ffb5" }} />
+            200-500 tx
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#80ffc0" }} />
+            500+ tx
           </span>
         </div>
         <span style={{ color: "var(--chrome-600)" }}>
