@@ -486,6 +486,12 @@ export const BlockSTMExplainer = memo(function BlockSTMExplainer({
       autoDensity: true,
     });
 
+    // Check if unmounted during async init
+    if (!mountedRef.current) {
+      app.destroy(true, { children: true });
+      return;
+    }
+
     container.appendChild(app.canvas as HTMLCanvasElement);
     appRef.current = app;
 
@@ -605,12 +611,29 @@ export const BlockSTMExplainer = memo(function BlockSTMExplainer({
       clearTimeout(initTimeout);
       resizeObserver.disconnect();
       if (appRef.current) {
-        // Stop ticker to prevent render during cleanup
+        // Stop ticker first to prevent render during cleanup
         appRef.current.ticker.stop();
+
+        // Remove ticker callback to prevent any pending updates
+        try {
+          appRef.current.ticker.remove(updateAnimation);
+        } catch {
+          // Ignore if already removed
+        }
+
+        // Explicitly destroy Text objects before app destroy to prevent texture pool issues
+        for (const text of textsRef.current) {
+          try {
+            text.destroy(true);
+          } catch {
+            // Ignore text destruction errors
+          }
+        }
+        textsRef.current = [];
 
         const canvas = appRef.current.canvas as HTMLCanvasElement;
         try {
-          appRef.current.destroy(true, { children: true });
+          appRef.current.destroy(true, { children: true, texture: true });
         } catch {
           // Ignore cleanup errors during HMR
         }
@@ -623,7 +646,6 @@ export const BlockSTMExplainer = memo(function BlockSTMExplainer({
         parallel: null,
         timeline: null,
       };
-      textsRef.current = [];
       initAttemptedRef.current = false;
       setIsReady(false);
     };

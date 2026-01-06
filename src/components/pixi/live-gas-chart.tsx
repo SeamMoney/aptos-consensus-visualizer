@@ -546,6 +546,12 @@ export const LiveGasChart = memo(function LiveGasChart({
       autoDensity: true,
     });
 
+    // Check if unmounted during async init
+    if (!mountedRef.current) {
+      app.destroy(true, { children: true });
+      return;
+    }
+
     app.ticker.maxFPS = 60; // Smooth 60fps updates
 
     container.appendChild(app.canvas as HTMLCanvasElement);
@@ -607,10 +613,19 @@ export const LiveGasChart = memo(function LiveGasChart({
       clearTimeout(initTimeout);
       resizeObserver.disconnect();
       if (appRef.current) {
+        // Stop ticker first to prevent render during cleanup
         appRef.current.ticker.stop();
+
+        // Remove ticker callback to prevent any pending updates
+        try {
+          appRef.current.ticker.remove(updateChart);
+        } catch {
+          // Ignore if already removed
+        }
+
         const canvas = appRef.current.canvas as HTMLCanvasElement;
         try {
-          appRef.current.destroy(true, { children: true });
+          appRef.current.destroy(true, { children: true, texture: true });
         } catch {
           // Ignore cleanup errors
         }
