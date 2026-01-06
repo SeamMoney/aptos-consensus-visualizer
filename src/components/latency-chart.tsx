@@ -66,19 +66,21 @@ export const LatencyChart = memo(function LatencyChart({ avgBlockTime }: Latency
       const chartWidth = chartRight - chartLeft;
       const chartHeight = chartBottom - chartTop;
 
-      // Dynamic Y-axis based on data (with reasonable bounds)
+      // Dynamic Y-axis - tight range to amplify small variations
       const allLatencies = dataPoints.map(p => p.e2eLatencyMs);
-      const dataMin = allLatencies.length > 0 ? Math.min(...allLatencies) : 460;
-      const dataMax = allLatencies.length > 0 ? Math.max(...allLatencies) : 500;
-      const padding = Math.max(10, (dataMax - dataMin) * 0.2);
-      const yMin = Math.floor((dataMin - padding) / 10) * 10;
-      const yMax = Math.ceil((dataMax + padding) / 10) * 10;
-      const yRange = Math.max(yMax - yMin, 40);
+      const dataMin = allLatencies.length > 0 ? Math.min(...allLatencies) : 465;
+      const dataMax = allLatencies.length > 0 ? Math.max(...allLatencies) : 475;
+      // Tight padding to make small changes visible
+      const range = dataMax - dataMin;
+      const padding = Math.max(5, range * 0.5);
+      const yMin = Math.floor(dataMin - padding);
+      const yMax = Math.ceil(dataMax + padding);
+      const yRange = Math.max(yMax - yMin, 15); // Minimum 15ms range for visibility
 
-      // Smart step sizing - aim for 4-5 grid lines max
-      const rawStep = yRange / 5;
-      const stepOptions = [10, 20, 25, 50, 100];
-      const yStep = stepOptions.find(s => s >= rawStep) || 50;
+      // Smart step sizing for tight Y range
+      const rawStep = yRange / 4;
+      const stepOptions = [2, 5, 10, 20, 25, 50];
+      const yStep = stepOptions.find(s => s >= rawStep) || 5;
 
       // Draw grid lines (limited to ~5)
       ctx.strokeStyle = "rgba(255, 255, 255, 0.06)";
@@ -123,35 +125,69 @@ export const LatencyChart = memo(function LatencyChart({ avgBlockTime }: Latency
 
         ctx.stroke();
 
-        // Live current point with pulsing glow
+        // Live current point with dramatic pulsing rings
         const cx = chartRight;
         const clampedLive = Math.max(yMin, Math.min(yMax, currentLatency));
         const cy = chartBottom - ((clampedLive - yMin) / yRange) * chartHeight;
 
-        // Pulsing glow effect
-        const pulse = Math.sin(timestamp / 300) * 0.3 + 0.7; // 0.4 to 1.0
-        const glowRadius = 12 * pulse;
+        // Multiple expanding rings
+        const ringCount = 3;
+        for (let r = 0; r < ringCount; r++) {
+          const phase = ((timestamp / 800) + (r / ringCount)) % 1; // 0 to 1, staggered
+          const ringRadius = 8 + phase * 30; // Expand from 8 to 38px
+          const ringOpacity = (1 - phase) * 0.5; // Fade out as it expands
 
-        // Outer glow
-        const gradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, glowRadius);
-        gradient.addColorStop(0, `rgba(0, 217, 165, ${0.6 * pulse})`);
-        gradient.addColorStop(1, "rgba(0, 217, 165, 0)");
+          ctx.beginPath();
+          ctx.strokeStyle = `rgba(0, 217, 165, ${ringOpacity})`;
+          ctx.lineWidth = 2;
+          ctx.arc(cx, cy, ringRadius, 0, Math.PI * 2);
+          ctx.stroke();
+        }
+
+        // Inner glow
+        const pulse = Math.sin(timestamp / 200) * 0.4 + 0.6;
+        const glowGradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, 20);
+        glowGradient.addColorStop(0, `rgba(0, 217, 165, ${0.8 * pulse})`);
+        glowGradient.addColorStop(0.5, `rgba(0, 217, 165, ${0.3 * pulse})`);
+        glowGradient.addColorStop(1, "rgba(0, 217, 165, 0)");
         ctx.beginPath();
-        ctx.fillStyle = gradient;
-        ctx.arc(cx, cy, glowRadius, 0, Math.PI * 2);
+        ctx.fillStyle = glowGradient;
+        ctx.arc(cx, cy, 20, 0, Math.PI * 2);
         ctx.fill();
 
         // Solid center point
         ctx.beginPath();
         ctx.fillStyle = "#00D9A5";
-        ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+        ctx.arc(cx, cy, 6, 0, Math.PI * 2);
         ctx.fill();
 
-        // Live value label next to point
+        // White core for extra pop
+        ctx.beginPath();
+        ctx.fillStyle = `rgba(255, 255, 255, ${0.5 + pulse * 0.5})`;
+        ctx.arc(cx, cy, 3, 0, Math.PI * 2);
+        ctx.fill();
+
+        // Horizontal scan line that pulses from the point
+        const scanPhase = (timestamp / 1500) % 1;
+        const scanX = cx - scanPhase * chartWidth;
+        if (scanX > chartLeft) {
+          ctx.beginPath();
+          ctx.strokeStyle = `rgba(0, 217, 165, ${(1 - scanPhase) * 0.3})`;
+          ctx.lineWidth = 1;
+          ctx.moveTo(scanX, chartTop);
+          ctx.lineTo(scanX, chartBottom);
+          ctx.stroke();
+        }
+
+        // Live value label with background
+        const labelText = `${currentLatency}ms`;
+        ctx.font = "bold 12px monospace";
+        const labelWidth = ctx.measureText(labelText).width + 8;
+        ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
+        ctx.fillRect(cx - labelWidth - 15, cy - 22, labelWidth, 18);
         ctx.fillStyle = "#00D9A5";
-        ctx.font = "bold 11px monospace";
         ctx.textAlign = "right";
-        ctx.fillText(`${currentLatency}ms`, cx - 10, cy - 10);
+        ctx.fillText(labelText, cx - 12, cy - 8);
       } else {
         ctx.fillStyle = "rgba(255, 255, 255, 0.3)";
         ctx.font = "12px monospace";

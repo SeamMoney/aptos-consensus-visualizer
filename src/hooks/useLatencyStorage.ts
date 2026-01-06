@@ -4,9 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { Network } from "@/contexts/NetworkContext";
 
 const E2E_MULTIPLIER = 5; // Raptr 4-hop consensus
-const SAMPLE_INTERVAL_MS = 3000; // Sample every 3 seconds for real-time feel
-const STORAGE_KEY_PREFIX = "aptos-latency-v6"; // v6 = real-time updates
-const MAX_POINTS = 200; // ~10 minutes at 3-second intervals
+const SAMPLE_INTERVAL_MS = 2000; // Sample every 2 seconds for real-time feel
+const STORAGE_KEY_PREFIX = "aptos-latency-v7"; // v7 = more dynamic
+const MAX_POINTS = 150; // ~5 minutes at 2-second intervals
 
 function getStorageKey(network: Network): string {
   return `${STORAGE_KEY_PREFIX}-${network}`;
@@ -37,17 +37,20 @@ function calculatePercentile(values: number[], percentile: number): number {
   return sorted[Math.max(0, index)];
 }
 
-// Generate initial baseline data (simulates ~10 minutes of history at 3s intervals)
+// Generate initial baseline data with natural variation
 function generateBaselineData(): LatencyDataPoint[] {
   const points: LatencyDataPoint[] = [];
   const now = Date.now();
   const baseLatency = 470; // Typical E2E latency
+  let drift = 0; // Slow drift for natural-looking trends
 
-  // Generate points going back ~10 minutes at 3-second intervals
   for (let i = MAX_POINTS - 1; i >= 0; i--) {
     const timestamp = now - (i * SAMPLE_INTERVAL_MS);
-    // Add small natural variation (±8ms) for realistic look
-    const variation = (Math.random() - 0.5) * 16;
+    // Random walk drift (creates natural-looking waves)
+    drift += (Math.random() - 0.5) * 2;
+    drift = Math.max(-10, Math.min(10, drift)); // Clamp drift
+    // Add instant variation + drift
+    const variation = (Math.random() - 0.5) * 8 + drift;
     points.push({
       timestamp,
       e2eLatencyMs: Math.round(baseLatency + variation),
@@ -114,19 +117,21 @@ export function useLatencyStorage(
     }
   }, [network]);
 
-  // Add new data points periodically
+  // Add new data points periodically with micro-jitter for visual movement
   useEffect(() => {
     if (!avgBlockTime || avgBlockTime <= 0) return;
     if (initializedNetworkRef.current !== network) return;
 
     const now = Date.now();
 
-    // Only sample every 60 seconds
+    // Sample every 2 seconds
     if (now - lastSampleTimeRef.current < SAMPLE_INTERVAL_MS) return;
 
     lastSampleTimeRef.current = now;
 
-    const e2eLatency = Math.round(avgBlockTime * E2E_MULTIPLIER);
+    // Add small jitter (±3ms) to make the line visually dynamic
+    const jitter = (Math.random() - 0.5) * 6;
+    const e2eLatency = Math.round(avgBlockTime * E2E_MULTIPLIER + jitter);
 
     setDataPoints((prev) => {
       const newPoint: LatencyDataPoint = {
