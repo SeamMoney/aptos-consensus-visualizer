@@ -244,7 +244,7 @@ export function useAptosStream() {
   const lastValidatorFetchRef = useRef<number>(0);
   const recentProposersRef = useRef<string[]>([]);
 
-  const defaultPollMs = parseInt(process.env.NEXT_PUBLIC_APTOS_POLL_MS || "500");
+  const defaultPollMs = parseInt(process.env.NEXT_PUBLIC_APTOS_POLL_MS || "300");
 
   // Error recovery refs
   const errorCountRef = useRef<number>(0);
@@ -252,6 +252,9 @@ export function useAptosStream() {
   const isPollingRef = useRef<boolean>(false);
   const rateLimitedUntilRef = useRef<number>(0);
   const baseIntervalRef = useRef<number>(defaultPollMs);
+
+  // Generation counter to prevent stale polls from rescheduling after network change
+  const pollGenerationRef = useRef<number>(0);
 
   // Calculate stats from blocks
   const updateStats = useCallback(() => {
@@ -367,7 +370,14 @@ export function useAptosStream() {
     if (pollIntervalRef.current) return;
     if (isPollingRef.current) return;
 
+    // Capture generation at start - if it changes, this poll session is stale
+    const myGeneration = pollGenerationRef.current;
+
     const poll = async () => {
+      // Check if this poll session is stale (network changed)
+      if (pollGenerationRef.current !== myGeneration) {
+        return; // Don't continue - a new poll session will start
+      }
       // Prevent concurrent polls
       if (isPollingRef.current) return;
 
@@ -427,9 +437,9 @@ export function useAptosStream() {
           lastBlockRef.current = currentHeight;
         }
 
-        // Fetch only new blocks (limit to 3 at a time)
+        // Fetch all new blocks since last poll (limit to 15 to handle ~100ms block times)
         if (currentHeight > lastBlockRef.current) {
-          const newCount = Math.min(currentHeight - lastBlockRef.current, 3);
+          const newCount = Math.min(currentHeight - lastBlockRef.current, 15);
           const heights = Array.from({ length: newCount }, (_, i) => currentHeight - i);
           const blocks = await Promise.all(heights.map(h => fetchBlock(apiBase, network, h)));
 
@@ -480,8 +490,13 @@ export function useAptosStream() {
           const waitMs = e.retryAfter * 1000;
           rateLimitedUntilRef.current = Date.now() + waitMs;
           baseIntervalRef.current = Math.max(baseIntervalRef.current, 2000); // At least 2s between polls
-          setError(`Rate limited. Waiting ${e.retryAfter}s...`);
-          setConnected(false);
+          // Don't immediately disconnect on rate limit - only if we have no recent data
+          const hasRecentData = blocksRef.current.length > 0 &&
+            (Date.now() - lastSuccessTimeRef.current) < 10000;
+          if (!hasRecentData) {
+            setConnected(false);
+            setError(`Rate limited. Waiting ${e.retryAfter}s...`);
+          }
         } else {
           console.error('Poll error:', e);
           errorCountRef.current++;
@@ -503,6 +518,10 @@ export function useAptosStream() {
     // Start polling with adaptive interval
     const runPoll = () => {
       poll().then(() => {
+        // Don't reschedule if generation changed (network switch)
+        if (pollGenerationRef.current !== myGeneration) {
+          return;
+        }
         // Schedule next poll with current interval
         pollIntervalRef.current = setTimeout(runPoll, baseIntervalRef.current);
       });
@@ -524,82 +543,17 @@ export function useAptosStream() {
     };
   }, [addBlock, fetchValidators, apiBase, network, defaultPollMs]);
 
-  // WebSocket connection (experimental - for true real-time)
+  // WebSocket connection disabled - Aptos public endpoints don't support WebSocket reliably
+  // Polling works well and is more reliable
   const connectWebSocket = useCallback(() => {
-    const tryConnect = (idx: number) => {
-      if (idx >= wsEndpoints.length) {
-        console.log('All WebSocket endpoints failed, using polling');
-        return;
-      }
-
-      const ws = new WebSocket(wsEndpoints[idx]);
-      wsRef.current = ws;
-
-      ws.onopen = () => {
-        console.log('WebSocket connected to', wsEndpoints[idx]);
-
-        // Try to subscribe to new blocks
-        ws.send(JSON.stringify({
-          jsonrpc: "2.0",
-          id: 1,
-          method: "subscribe",
-          params: ["newBlock"]
-        }));
-      };
-
-      ws.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          console.log('WS message:', data);
-
-          // Handle block notifications
-          if (data.params?.result?.block_height) {
-            const height = parseInt(data.params.result.block_height);
-            // Fetch full block data
-            fetchBlock(apiBase, network, height).then(block => {
-              if (block) {
-                const timestamp = parseInt(block.block_timestamp) / 1000;
-                const txCount = block.transactions?.length || 0;
-
-                let blockTimeMs = 94;
-                const prevBlock = blocksRef.current.find(b => b.blockHeight === height - 1);
-                if (prevBlock) {
-                  blockTimeMs = Math.max(1, timestamp - prevBlock.timestamp);
-                }
-
-                addBlock({
-                  blockHeight: height,
-                  txCount,
-                  timestamp,
-                  blockTimeMs,
-                  gasUsed: 0,
-                });
-              }
-            });
-          }
-        } catch (e) {
-          // Not JSON or parse error
-        }
-      };
-
-      ws.onerror = () => {
-        console.log('WebSocket error on', wsEndpoints[idx]);
-        ws.close();
-      };
-
-      ws.onclose = () => {
-        console.log('WebSocket closed');
-        // Try next endpoint
-        setTimeout(() => tryConnect(idx + 1), 1000);
-      };
-    };
-
-    // Start trying WebSocket endpoints
-    tryConnect(0);
-  }, [addBlock, apiBase, wsEndpoints, network]);
+    // No-op - WebSocket endpoints not available
+  }, []);
 
   // Main polling effect - restarts whenever network/apiBase changes
   useEffect(() => {
+    // Increment generation to invalidate any stale polls from previous network
+    pollGenerationRef.current++;
+
     // Reset all refs for fresh start
     lastBlockRef.current = 0;
     blocksRef.current = [];
@@ -612,7 +566,7 @@ export function useAptosStream() {
     rateLimitedUntilRef.current = 0;
     baseIntervalRef.current = defaultPollMs;
 
-    // Reset stats state
+    // Reset stats state but keep connected true briefly to avoid flash
     setStats({
       blockHeight: 0,
       tps: 0,
@@ -620,7 +574,7 @@ export function useAptosStream() {
       recentBlocks: [],
       consensus: null,
     });
-    setConnected(false);
+    // Don't immediately set disconnected - give polling a chance to connect
     setError(null);
 
     // Small delay to ensure clean state before starting

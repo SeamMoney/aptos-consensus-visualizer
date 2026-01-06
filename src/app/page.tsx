@@ -33,9 +33,11 @@ import {
   EncryptedMempool,
   LiveGasChart,
 } from "@/components/pixi";
+import { GasExplainer } from "@/components/gas-explainer";
 import { useAptosStream } from "@/hooks/useAptosStream";
 import { LearnMoreLink } from "@/components/ui/tooltip";
 import { NetworkSelector } from "@/components/network-selector";
+import Link from "next/link";
 
 export default function Home() {
   const { stats, connected } = useAptosStream();
@@ -53,7 +55,16 @@ export default function Home() {
               Learn how Aptos processes 160,000+ transactions per second
             </p>
           </div>
-          <NetworkSelector connected={connected} />
+          <div className="flex items-center gap-3">
+            <Link
+              href="/globe"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-500/10 hover:bg-purple-500/20 ring-1 ring-purple-500/30 text-purple-400 text-xs transition-colors"
+            >
+              <span className="text-base">🌐</span>
+              <span className="hidden sm:inline">3D Globe</span>
+            </Link>
+            <NetworkSelector connected={connected} />
+          </div>
         </header>
 
         {/* Block Stream - Live block production */}
@@ -272,6 +283,11 @@ export default function Home() {
         {/* Perp DEX Flash Crash Scenario */}
         <section className="mb-4">
           <PerpDexScenario />
+        </section>
+
+        {/* Gas Fees Explainer */}
+        <section className="mb-4">
+          <GasExplainer />
         </section>
 
         {/* Live Gas Price Chart */}

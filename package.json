@@ -10,10 +10,15 @@
   },
   "dependencies": {
     "@aptos-labs/ts-sdk": "^5.2.0",
+    "@orillusion/core": "^0.8.4",
+    "@orillusion/graphic": "^0.2.7",
     "@pixi/react": "^8.0.5",
     "@radix-ui/react-slot": "^1.1.1",
     "@radix-ui/react-tabs": "^1.1.2",
+    "@react-three/drei": "^10.7.7",
+    "@react-three/fiber": "^9.5.0",
     "@types/p5": "^1.7.7",
+    "@types/three": "^0.182.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "framer-motion": "^12.0.0",
@@ -24,7 +29,8 @@
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "tailwind-merge": "^3.0.0",
-    "tailwindcss-animate": "^1.0.7"
+    "tailwindcss-animate": "^1.0.7",
+    "three": "^0.182.0"
   },
   "devDependencies": {
     "@types/node": "^22",

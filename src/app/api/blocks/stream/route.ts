@@ -52,7 +52,7 @@ export async function GET(request: Request) {
 
         // Rate limit: only fetch if interval has passed since last fetch
         const now = Date.now();
-        const pollIntervalMs = parseInt(process.env.APTOS_STREAM_POLL_MS || "500");
+        const pollIntervalMs = parseInt(process.env.APTOS_STREAM_POLL_MS || "300");
         if (globalCache.network !== network) {
           globalCache = {
             network,
@@ -87,72 +87,93 @@ export async function GET(request: Request) {
           const currentHeight = parseInt(ledger.block_height);
 
           if (currentHeight > globalCache.lastBlockHeight) {
-            // Fetch just the latest block
-            const blockRes = await fetchFromAny(
-              `/blocks/by_height/${currentHeight}?with_transactions=true`,
-              network,
-              { cache: "no-store" }
+            // Fetch all missed blocks (up to 15) to keep up with ~100ms block times
+            const missedCount = Math.min(
+              currentHeight - (globalCache.lastBlockHeight || currentHeight - 1),
+              15
             );
-            if (!blockRes.ok) throw new Error(`Block ${blockRes.status}`);
-            const block = await blockRes.json();
+            const heights = Array.from({ length: missedCount }, (_, i) => currentHeight - i);
 
-            const timestamp = parseInt(block.block_timestamp) / 1000;
-            const txCount = block.transactions?.length || 0;
+            // Fetch all blocks in parallel
+            const blockPromises = heights.map(height =>
+              fetchFromAny(
+                `/blocks/by_height/${height}?with_transactions=true`,
+                network,
+                { cache: "no-store" }
+              ).then(res => res.ok ? res.json() : null).catch(() => null)
+            );
 
-            // Calculate block time
-            let blockTimeMs = 94;
-            if (globalCache.recentBlocks.length > 0) {
-              const prev = globalCache.recentBlocks[0];
-              blockTimeMs = Math.max(1, timestamp - prev.timestamp);
-            }
+            const blocks = await Promise.all(blockPromises);
+            const newBlocks: BlockStats[] = [];
 
-            let gasUsed = 0;
-            const gasPrices: number[] = [];
-            if (block.transactions) {
-              for (const tx of block.transactions as any[]) {
-                if (tx.gas_used) gasUsed += parseInt(tx.gas_used);
-                // Extract gas prices from user transactions
-                if (tx.type === "user_transaction" && tx.gas_unit_price) {
-                  gasPrices.push(parseInt(tx.gas_unit_price));
+            for (let i = 0; i < blocks.length; i++) {
+              const block = blocks[i];
+              if (!block) continue;
+
+              const height = heights[i];
+              const timestamp = parseInt(block.block_timestamp) / 1000;
+              const txCount = block.transactions?.length || 0;
+
+              // Calculate block time
+              let blockTimeMs = 94;
+              const prevBlock = globalCache.recentBlocks.find(b => b.blockHeight === height - 1) ||
+                               newBlocks.find(b => b.blockHeight === height - 1);
+              if (prevBlock) {
+                blockTimeMs = Math.max(1, timestamp - prevBlock.timestamp);
+              }
+
+              let gasUsed = 0;
+              const gasPrices: number[] = [];
+              if (block.transactions) {
+                for (const tx of block.transactions as any[]) {
+                  if (tx.gas_used) gasUsed += parseInt(tx.gas_used);
+                  if (tx.type === "user_transaction" && tx.gas_unit_price) {
+                    gasPrices.push(parseInt(tx.gas_unit_price));
+                  }
                 }
               }
+
+              const gasStats = gasPrices.length > 0 ? {
+                min: Math.min(...gasPrices),
+                max: Math.max(...gasPrices),
+                median: gasPrices.sort((a, b) => a - b)[Math.floor(gasPrices.length / 2)],
+                count: gasPrices.length,
+              } : null;
+
+              const metadata = parseBlockMetadata(block);
+              newBlocks.push({
+                blockHeight: height,
+                txCount,
+                timestamp,
+                blockTimeMs,
+                gasUsed,
+                gasStats: gasStats || undefined,
+                ...metadata,
+              });
             }
 
-            // Calculate gas price stats for this block
-            const gasStats = gasPrices.length > 0 ? {
-              min: Math.min(...gasPrices),
-              max: Math.max(...gasPrices),
-              median: gasPrices.sort((a, b) => a - b)[Math.floor(gasPrices.length / 2)],
-              count: gasPrices.length,
-            } : null;
+            if (newBlocks.length > 0) {
+              // Sort by height descending and add to cache
+              newBlocks.sort((a, b) => b.blockHeight - a.blockHeight);
+              globalCache.network = network;
+              globalCache.recentBlocks = [...newBlocks, ...globalCache.recentBlocks]
+                .filter((b, i, arr) => arr.findIndex(x => x.blockHeight === b.blockHeight) === i)
+                .sort((a, b) => b.blockHeight - a.blockHeight)
+                .slice(0, 50);
+              globalCache.lastBlockHeight = currentHeight;
+              globalCache.lastFetchTime = now;
 
-            const metadata = parseBlockMetadata(block);
-            const newBlock: BlockStats = {
-              blockHeight: currentHeight,
-              txCount,
-              timestamp,
-              blockTimeMs,
-              gasUsed,
-              gasStats: gasStats || undefined,
-              ...metadata,
-            };
-
-            // Update global cache
-            globalCache.network = network;
-            globalCache.recentBlocks = [newBlock, ...globalCache.recentBlocks].slice(0, 50);
-            globalCache.lastBlockHeight = currentHeight;
-            globalCache.lastFetchTime = now;
-
-            sendEvent({
-              type: 'blocks',
-              blocks: [newBlock],
-              stats: {
-                blockHeight: currentHeight,
-                tps: calculateTPS(globalCache.recentBlocks.slice(0, 20)),
-                avgBlockTime: calculateAvgBlockTime(globalCache.recentBlocks.slice(0, 20)),
-                recentBlocks: globalCache.recentBlocks.slice(0, 30),
-              }
-            });
+              sendEvent({
+                type: 'blocks',
+                blocks: newBlocks,
+                stats: {
+                  blockHeight: currentHeight,
+                  tps: calculateTPS(globalCache.recentBlocks.slice(0, 20)),
+                  avgBlockTime: calculateAvgBlockTime(globalCache.recentBlocks.slice(0, 20)),
+                  recentBlocks: globalCache.recentBlocks.slice(0, 30),
+                }
+              });
+            }
           } else {
             globalCache.network = network;
             globalCache.lastFetchTime = now;
@@ -167,7 +188,7 @@ export async function GET(request: Request) {
       await poll();
 
       // Poll at configured interval
-      const intervalMs = parseInt(process.env.APTOS_STREAM_POLL_MS || "500");
+      const intervalMs = parseInt(process.env.APTOS_STREAM_POLL_MS || "300");
       const interval = setInterval(poll, intervalMs);
 
       // Cleanup after 5 minutes
