@@ -1223,28 +1223,25 @@ export const GlobeVisualizer = memo(function GlobeVisualizer({ fullscreen = fals
       const txCount = block.txCount || 1;
       const fromIdx = addressToLocationIndex(proposerAddress);
 
-      // Create 2-4 arcs per block (more visual activity)
-      const numArcs = Math.min(4, Math.max(2, Math.floor(txCount / 10)));
-
-      for (let i = 0; i < numArcs; i++) {
-        let destIdx = Math.floor(Math.random() * NODE_LOCATIONS.length);
-        while (destIdx === fromIdx) {
-          destIdx = Math.floor(Math.random() * NODE_LOCATIONS.length);
-        }
-        const toLocation = NODE_LOCATIONS[destIdx];
-
-        allNewArcs.push({
-          id: arcIdRef.current++,
-          fromAddress: proposerAddress,
-          from: { lat: fromLocation.lat, lon: fromLocation.lon, name: fromLocation.name },
-          to: { lat: toLocation.lat, lon: toLocation.lon, name: toLocation.name },
-          progress: 0,
-          opacity: 1,
-          blockHeight: block.blockHeight,
-          txCount: txCount,
-          timestamp: Date.now() + Math.random() * 100, // Slight stagger
-        });
+      // Pick a random destination validator for this block's arc
+      let destIdx = Math.floor(Math.random() * NODE_LOCATIONS.length);
+      while (destIdx === fromIdx) {
+        destIdx = Math.floor(Math.random() * NODE_LOCATIONS.length);
       }
+      const toLocation = NODE_LOCATIONS[destIdx];
+
+      // 1 arc per block - each arc represents one block broadcast
+      allNewArcs.push({
+        id: arcIdRef.current++,
+        fromAddress: proposerAddress,
+        from: { lat: fromLocation.lat, lon: fromLocation.lon, name: fromLocation.name },
+        to: { lat: toLocation.lat, lon: toLocation.lon, name: toLocation.name },
+        progress: 0,
+        opacity: 1,
+        blockHeight: block.blockHeight,
+        txCount: txCount,
+        timestamp: Date.now() + Math.random() * 50, // Slight stagger
+      });
 
       // Add to activity feed
       allNewFeedItems.push({
