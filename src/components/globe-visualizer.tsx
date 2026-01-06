@@ -1197,58 +1197,73 @@ export const GlobeVisualizer = memo(function GlobeVisualizer({ fullscreen = fals
   }, [connected, isVisible]);
 
   // Add arcs on new blocks using REAL proposer data
+  // Process ALL new blocks since last check for faster visual updates
   useEffect(() => {
     if (!stats.recentBlocks?.length || !isVisible) return;
 
-    // Get the NEWEST block (first in array, sorted descending by height)
-    const latestBlock = stats.recentBlocks[0];
-    if (!latestBlock || latestBlock.blockHeight === lastBlockRef.current) return;
+    // Find all blocks we haven't processed yet
+    const newBlocks = stats.recentBlocks.filter(
+      block => block.blockHeight > lastBlockRef.current
+    );
 
-    lastBlockRef.current = latestBlock.blockHeight;
+    if (newBlocks.length === 0) return;
 
-    // Get proposer address (use real data if available)
-    const proposerAddress = latestBlock.proposer || `0x${Math.random().toString(16).slice(2, 18)}`;
-    const fromLocation = getValidatorLocation(proposerAddress);
-    const txCount = latestBlock.txCount || 1;
+    // Update last processed block
+    lastBlockRef.current = stats.recentBlocks[0].blockHeight;
 
-    // Create 1-3 arcs per block (broadcast simulation)
-    const numArcs = Math.min(3, Math.max(1, Math.floor(txCount / 15)));
-    const newArcs: ValidatorArc[] = [];
-    const fromIdx = addressToLocationIndex(proposerAddress);
+    const allNewArcs: ValidatorArc[] = [];
+    const allNewFeedItems: ActivityFeedItem[] = [];
 
-    for (let i = 0; i < numArcs; i++) {
-      let destIdx = Math.floor(Math.random() * NODE_LOCATIONS.length);
-      while (destIdx === fromIdx) {
-        destIdx = Math.floor(Math.random() * NODE_LOCATIONS.length);
+    // Process each new block (limit to 5 most recent to avoid overwhelming)
+    const blocksToProcess = newBlocks.slice(0, 5);
+
+    for (const block of blocksToProcess) {
+      const proposerAddress = block.proposer || `0x${Math.random().toString(16).slice(2, 18)}`;
+      const fromLocation = getValidatorLocation(proposerAddress);
+      const txCount = block.txCount || 1;
+      const fromIdx = addressToLocationIndex(proposerAddress);
+
+      // Create 2-4 arcs per block (more visual activity)
+      const numArcs = Math.min(4, Math.max(2, Math.floor(txCount / 10)));
+
+      for (let i = 0; i < numArcs; i++) {
+        let destIdx = Math.floor(Math.random() * NODE_LOCATIONS.length);
+        while (destIdx === fromIdx) {
+          destIdx = Math.floor(Math.random() * NODE_LOCATIONS.length);
+        }
+        const toLocation = NODE_LOCATIONS[destIdx];
+
+        allNewArcs.push({
+          id: arcIdRef.current++,
+          fromAddress: proposerAddress,
+          from: { lat: fromLocation.lat, lon: fromLocation.lon, name: fromLocation.name },
+          to: { lat: toLocation.lat, lon: toLocation.lon, name: toLocation.name },
+          progress: 0,
+          opacity: 1,
+          blockHeight: block.blockHeight,
+          txCount: txCount,
+          timestamp: Date.now() + Math.random() * 100, // Slight stagger
+        });
       }
-      const toLocation = NODE_LOCATIONS[destIdx];
 
-      newArcs.push({
-        id: arcIdRef.current++,
-        fromAddress: proposerAddress,
-        from: { lat: fromLocation.lat, lon: fromLocation.lon, name: fromLocation.name },
-        to: { lat: toLocation.lat, lon: toLocation.lon, name: toLocation.name },
-        progress: 0,
-        opacity: 1,
-        blockHeight: latestBlock.blockHeight,
-        txCount: txCount,
+      // Add to activity feed
+      allNewFeedItems.push({
+        id: feedIdRef.current++,
+        blockHeight: block.blockHeight,
+        proposerAddress,
+        proposerName: getValidatorName(proposerAddress),
+        proposerCity: fromLocation.name,
+        txCount,
         timestamp: Date.now(),
+        opacity: 1,
       });
     }
 
-    setArcs((prev) => [...prev, ...newArcs].slice(-10));
+    // Allow more arcs on screen (up to 20)
+    setArcs((prev) => [...prev, ...allNewArcs].slice(-20));
 
-    // Add to activity feed - show more items
-    setActivityFeed((prev) => [{
-      id: feedIdRef.current++,
-      blockHeight: latestBlock.blockHeight,
-      proposerAddress,
-      proposerName: getValidatorName(proposerAddress),
-      proposerCity: fromLocation.name,
-      txCount,
-      timestamp: Date.now(),
-      opacity: 1,
-    }, ...prev].slice(0, 8));
+    // Add new feed items (most recent first)
+    setActivityFeed((prev) => [...allNewFeedItems.reverse(), ...prev].slice(0, 8));
 
   }, [stats.recentBlocks, isVisible]);
 
