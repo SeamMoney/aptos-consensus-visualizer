@@ -71,17 +71,20 @@ export const LatencyChart = memo(function LatencyChart({ avgBlockTime }: Latency
       const dataMin = allLatencies.length > 0 ? Math.min(...allLatencies) : 465;
       const dataMax = allLatencies.length > 0 ? Math.max(...allLatencies) : 475;
 
-      // Round to nice numbers for clean axis
-      const range = dataMax - dataMin;
-      const padding = Math.max(5, range * 0.3);
-      const yMin = Math.floor((dataMin - padding) / 5) * 5; // Round down to nearest 5
-      const yMax = Math.ceil((dataMax + padding) / 5) * 5;  // Round up to nearest 5
-      const yRange = Math.max(yMax - yMin, 20); // Minimum 20ms range
+      // Calculate range and determine appropriate rounding unit
+      const rawRange = dataMax - dataMin;
+      const padding = Math.max(5, rawRange * 0.15);
 
-      // Step sizing for clean grid lines
-      const stepOptions = [5, 10, 20, 25, 50];
+      // Pick rounding unit based on range size (larger range = coarser rounding)
+      const roundUnit = rawRange > 500 ? 100 : rawRange > 100 ? 50 : rawRange > 50 ? 10 : 5;
+      const yMin = Math.floor((dataMin - padding) / roundUnit) * roundUnit;
+      const yMax = Math.ceil((dataMax + padding) / roundUnit) * roundUnit;
+      const yRange = Math.max(yMax - yMin, 20);
+
+      // Step sizing - always aim for 4-5 grid lines max
+      const stepOptions = [5, 10, 20, 50, 100, 200, 500, 1000, 2000];
       const rawStep = yRange / 4;
-      const yStep = stepOptions.find(s => s >= rawStep) || 10;
+      const yStep = stepOptions.find(s => s >= rawStep) || Math.ceil(rawStep / 100) * 100;
 
       // Draw horizontal grid lines
       ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
