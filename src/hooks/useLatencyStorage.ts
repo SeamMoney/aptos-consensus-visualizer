@@ -1,11 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { Network } from "@/contexts/NetworkContext";
 
 const E2E_MULTIPLIER = 5; // Raptr 4-hop consensus
 const SAMPLE_INTERVAL_MS = 60000; // Sample every 60 seconds (1 minute)
-const STORAGE_KEY = "aptos-latency-v4";
+const STORAGE_KEY_PREFIX = "aptos-latency-v5"; // v5 = network-aware
 const MAX_POINTS = 120; // ~2 hours at 1-minute intervals
+
+function getStorageKey(network: Network): string {
+  return `${STORAGE_KEY_PREFIX}-${network}`;
+}
 
 export interface LatencyDataPoint {
   timestamp: number;
@@ -52,11 +57,11 @@ function generateBaselineData(): LatencyDataPoint[] {
 }
 
 // Load from localStorage
-function loadFromStorage(): LatencyDataPoint[] {
+function loadFromStorage(network: Network): LatencyDataPoint[] {
   if (typeof window === "undefined") return [];
 
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = localStorage.getItem(getStorageKey(network));
     if (!stored) return [];
 
     const data = JSON.parse(stored) as LatencyDataPoint[];
@@ -70,46 +75,48 @@ function loadFromStorage(): LatencyDataPoint[] {
 }
 
 // Save to localStorage
-function saveToStorage(points: LatencyDataPoint[]) {
+function saveToStorage(network: Network, points: LatencyDataPoint[]) {
   if (typeof window === "undefined") return;
 
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(points.slice(-MAX_POINTS)));
+    localStorage.setItem(getStorageKey(network), JSON.stringify(points.slice(-MAX_POINTS)));
   } catch {
     // Storage full or unavailable
   }
 }
 
 export function useLatencyStorage(
-  avgBlockTime: number
+  avgBlockTime: number,
+  network: Network
 ): LatencyStorageResult {
   const [dataPoints, setDataPoints] = useState<LatencyDataPoint[]>([]);
   const lastSampleTimeRef = useRef<number>(0);
-  const initializedRef = useRef<boolean>(false);
+  const initializedNetworkRef = useRef<Network | null>(null);
 
-  // Initialize from localStorage or baseline on mount
+  // Initialize from localStorage or baseline when network changes
   useEffect(() => {
-    if (initializedRef.current) return;
-    initializedRef.current = true;
+    // Re-initialize when network changes
+    if (initializedNetworkRef.current === network) return;
+    initializedNetworkRef.current = network;
 
-    const stored = loadFromStorage();
+    const stored = loadFromStorage(network);
     if (stored.length > 10) {
-      // Use stored data
+      // Use stored data for this network
       setDataPoints(stored);
       lastSampleTimeRef.current = stored[stored.length - 1]?.timestamp || 0;
     } else {
       // Generate baseline data for instant chart
       const baseline = generateBaselineData();
       setDataPoints(baseline);
-      saveToStorage(baseline);
+      saveToStorage(network, baseline);
       lastSampleTimeRef.current = Date.now();
     }
-  }, []);
+  }, [network]);
 
   // Add new data points periodically
   useEffect(() => {
     if (!avgBlockTime || avgBlockTime <= 0) return;
-    if (!initializedRef.current) return;
+    if (initializedNetworkRef.current !== network) return;
 
     const now = Date.now();
 
@@ -126,10 +133,10 @@ export function useLatencyStorage(
         e2eLatencyMs: e2eLatency,
       };
       const updated = [...prev, newPoint].slice(-MAX_POINTS);
-      saveToStorage(updated);
+      saveToStorage(network, updated);
       return updated;
     });
-  }, [avgBlockTime]);
+  }, [avgBlockTime, network]);
 
   const allLatencies = dataPoints.map((p) => p.e2eLatencyMs);
 

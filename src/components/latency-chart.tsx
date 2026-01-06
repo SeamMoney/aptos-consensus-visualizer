@@ -3,6 +3,7 @@
 import { useRef, useEffect, memo } from "react";
 import { useLatencyStorage } from "@/hooks/useLatencyStorage";
 import { useVisibility } from "@/hooks/useVisibility";
+import { useNetwork } from "@/contexts/NetworkContext";
 
 interface LatencyChartProps {
   avgBlockTime: number;
@@ -13,8 +14,9 @@ export const LatencyChart = memo(function LatencyChart({ avgBlockTime }: Latency
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>(0);
   const isVisible = useVisibility(containerRef);
+  const { network } = useNetwork();
 
-  const { dataPoints, currentP50, currentP95, stats } = useLatencyStorage(avgBlockTime);
+  const { dataPoints, currentP50, currentP95, stats } = useLatencyStorage(avgBlockTime, network);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -180,7 +182,7 @@ export const LatencyChart = memo(function LatencyChart({ avgBlockTime }: Latency
         <div>
           <h3 className="section-title">E2E Latency with Finality</h3>
           <p className="text-xs" style={{ color: "var(--chrome-600)" }}>
-            p50 median · {stats.count} samples
+            p50 median · {stats.count} samples · <span className="uppercase">{network}</span>
           </p>
         </div>
         <div className="flex items-center gap-2 sm:gap-4 text-[10px] sm:text-xs font-mono">
