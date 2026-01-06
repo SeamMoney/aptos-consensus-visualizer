@@ -11,7 +11,7 @@ interface GridBlock {
   txCount: number;
 }
 
-// Color based on transaction count - extended gradient for high TPS (up to 500+ tx)
+// Color based on transaction count - heat map: green → yellow → orange for high TPS
 function getBlockColor(txCount: number): string {
   if (txCount === 0) return "#1e1e22";
   if (txCount === 1) return "#1a3020";
@@ -21,13 +21,13 @@ function getBlockColor(txCount: number): string {
   if (txCount <= 20) return "#00704a";
   if (txCount <= 40) return "#00875a";
   if (txCount <= 70) return "#00a86b";
-  if (txCount <= 100) return "#00c77b";
+  if (txCount <= 100) return "#00c77b";  // Bright green
   if (txCount <= 150) return "#00d98a";
-  if (txCount <= 200) return "#00e593";
-  if (txCount <= 300) return "#00f0a0";
-  if (txCount <= 400) return "#20ffaa";
-  if (txCount <= 500) return "#50ffb5";
-  return "#80ffc0"; // Ultra bright for 500+ tx
+  if (txCount <= 200) return "#40e880";  // Green-yellow
+  if (txCount <= 300) return "#80dd60";  // Yellow-green
+  if (txCount <= 400) return "#c0d040";  // Yellow
+  if (txCount <= 500) return "#f0b020";  // Orange-yellow
+  return "#ff8800"; // Orange for 500+ tx (on fire!)
 }
 
 // Get text color that contrasts with block color
@@ -340,19 +340,19 @@ export const BlockStream = memo(function BlockStream() {
             1-20 tx
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#00a86b" }} />
+            <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#00c77b" }} />
             20-100 tx
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#00e593" }} />
-            100-200 tx
+            <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#80dd60" }} />
+            100-300 tx
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#50ffb5" }} />
-            200-500 tx
+            <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#f0b020" }} />
+            300-500 tx
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#80ffc0" }} />
+            <span className="w-2.5 h-2.5 rounded-sm" style={{ background: "#ff8800" }} />
             500+ tx
           </span>
         </div>
