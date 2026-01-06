@@ -50,23 +50,32 @@ export async function fetchFromAny(
   let lastError: Error | null = null;
   let lastRateLimit: { retryAfter: string | null } | null = null;
 
+  // Debug logging
+  console.log(`[API] Network: ${network}, URLs: ${JSON.stringify(urls)}`);
+
   for (const base of urls) {
+    const fullUrl = `${base}${path}`;
+    console.log(`[API] Trying: ${fullUrl}`);
     try {
-      const res = await fetch(`${base}${path}`, {
+      const res = await fetch(fullUrl, {
         ...init,
         headers: {
           ...getHeaders(apiKey),
           ...(init?.headers || {}),
         },
       });
+      console.log(`[API] Response from ${base}: ${res.status}`);
       if (res.status === 429) {
+        console.log(`[API] Rate limited by ${base}`);
         lastRateLimit = { retryAfter: res.headers.get("Retry-After") };
         continue;
       }
       if (!res.ok) {
+        console.log(`[API] Error from ${base}: ${res.status}`);
         lastError = new Error(`Upstream ${res.status}`);
         continue;
       }
+      console.log(`[API] Success from ${base}`);
       return res;
     } catch (err) {
       lastError = err as Error;
