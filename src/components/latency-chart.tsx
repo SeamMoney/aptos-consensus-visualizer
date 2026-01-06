@@ -66,24 +66,25 @@ export const LatencyChart = memo(function LatencyChart({ avgBlockTime }: Latency
       const chartWidth = chartRight - chartLeft;
       const chartHeight = chartBottom - chartTop;
 
-      // Dynamic Y-axis - tight range to amplify small variations
+      // Dynamic Y-axis with clean round numbers
       const allLatencies = dataPoints.map(p => p.e2eLatencyMs);
       const dataMin = allLatencies.length > 0 ? Math.min(...allLatencies) : 465;
       const dataMax = allLatencies.length > 0 ? Math.max(...allLatencies) : 475;
-      // Tight padding to make small changes visible
+
+      // Round to nice numbers for clean axis
       const range = dataMax - dataMin;
-      const padding = Math.max(5, range * 0.5);
-      const yMin = Math.floor(dataMin - padding);
-      const yMax = Math.ceil(dataMax + padding);
-      const yRange = Math.max(yMax - yMin, 15); // Minimum 15ms range for visibility
+      const padding = Math.max(5, range * 0.3);
+      const yMin = Math.floor((dataMin - padding) / 5) * 5; // Round down to nearest 5
+      const yMax = Math.ceil((dataMax + padding) / 5) * 5;  // Round up to nearest 5
+      const yRange = Math.max(yMax - yMin, 20); // Minimum 20ms range
 
-      // Smart step sizing for tight Y range
+      // Step sizing for clean grid lines
+      const stepOptions = [5, 10, 20, 25, 50];
       const rawStep = yRange / 4;
-      const stepOptions = [2, 5, 10, 20, 25, 50];
-      const yStep = stepOptions.find(s => s >= rawStep) || 5;
+      const yStep = stepOptions.find(s => s >= rawStep) || 10;
 
-      // Draw grid lines (limited to ~5)
-      ctx.strokeStyle = "rgba(255, 255, 255, 0.06)";
+      // Draw horizontal grid lines
+      ctx.strokeStyle = "rgba(255, 255, 255, 0.08)";
       ctx.lineWidth = 1;
 
       const startVal = Math.ceil(yMin / yStep) * yStep;
@@ -95,11 +96,12 @@ export const LatencyChart = memo(function LatencyChart({ avgBlockTime }: Latency
         ctx.lineTo(chartRight, y);
         ctx.stroke();
 
+        // Y-axis labels with "ms" suffix
         ctx.fillStyle = "rgba(255, 255, 255, 0.5)";
         ctx.font = "10px monospace";
         ctx.textAlign = "right";
         ctx.textBaseline = "middle";
-        ctx.fillText(`${value}`, chartLeft - 8, y);
+        ctx.fillText(`${value}ms`, chartLeft - 6, y);
       }
 
       // Draw line from data points
@@ -125,69 +127,33 @@ export const LatencyChart = memo(function LatencyChart({ avgBlockTime }: Latency
 
         ctx.stroke();
 
-        // Live current point with dramatic pulsing rings
+        // Current endpoint - use last data point position (not currentLatency)
+        const last = dataPoints[dataPoints.length - 1];
         const cx = chartRight;
-        const clampedLive = Math.max(yMin, Math.min(yMax, currentLatency));
-        const cy = chartBottom - ((clampedLive - yMin) / yRange) * chartHeight;
+        const clampedLast = Math.max(yMin, Math.min(yMax, last.e2eLatencyMs));
+        const cy = chartBottom - ((clampedLast - yMin) / yRange) * chartHeight;
 
-        // Multiple expanding rings
-        const ringCount = 3;
-        for (let r = 0; r < ringCount; r++) {
-          const phase = ((timestamp / 800) + (r / ringCount)) % 1; // 0 to 1, staggered
-          const ringRadius = 8 + phase * 30; // Expand from 8 to 38px
-          const ringOpacity = (1 - phase) * 0.5; // Fade out as it expands
-
-          ctx.beginPath();
-          ctx.strokeStyle = `rgba(0, 217, 165, ${ringOpacity})`;
-          ctx.lineWidth = 2;
-          ctx.arc(cx, cy, ringRadius, 0, Math.PI * 2);
-          ctx.stroke();
-        }
-
-        // Inner glow
-        const pulse = Math.sin(timestamp / 200) * 0.4 + 0.6;
-        const glowGradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, 20);
-        glowGradient.addColorStop(0, `rgba(0, 217, 165, ${0.8 * pulse})`);
-        glowGradient.addColorStop(0.5, `rgba(0, 217, 165, ${0.3 * pulse})`);
+        // Subtle pulsing glow
+        const pulse = Math.sin(timestamp / 500) * 0.3 + 0.7; // Slower, gentler pulse
+        const glowGradient = ctx.createRadialGradient(cx, cy, 0, cx, cy, 12);
+        glowGradient.addColorStop(0, `rgba(0, 217, 165, ${0.5 * pulse})`);
         glowGradient.addColorStop(1, "rgba(0, 217, 165, 0)");
         ctx.beginPath();
         ctx.fillStyle = glowGradient;
-        ctx.arc(cx, cy, 20, 0, Math.PI * 2);
+        ctx.arc(cx, cy, 12, 0, Math.PI * 2);
         ctx.fill();
 
         // Solid center point
         ctx.beginPath();
         ctx.fillStyle = "#00D9A5";
-        ctx.arc(cx, cy, 6, 0, Math.PI * 2);
+        ctx.arc(cx, cy, 4, 0, Math.PI * 2);
         ctx.fill();
 
-        // White core for extra pop
-        ctx.beginPath();
-        ctx.fillStyle = `rgba(255, 255, 255, ${0.5 + pulse * 0.5})`;
-        ctx.arc(cx, cy, 3, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Horizontal scan line that pulses from the point
-        const scanPhase = (timestamp / 1500) % 1;
-        const scanX = cx - scanPhase * chartWidth;
-        if (scanX > chartLeft) {
-          ctx.beginPath();
-          ctx.strokeStyle = `rgba(0, 217, 165, ${(1 - scanPhase) * 0.3})`;
-          ctx.lineWidth = 1;
-          ctx.moveTo(scanX, chartTop);
-          ctx.lineTo(scanX, chartBottom);
-          ctx.stroke();
-        }
-
-        // Live value label with background
-        const labelText = `${currentLatency}ms`;
-        ctx.font = "bold 12px monospace";
-        const labelWidth = ctx.measureText(labelText).width + 8;
-        ctx.fillStyle = "rgba(0, 0, 0, 0.7)";
-        ctx.fillRect(cx - labelWidth - 15, cy - 22, labelWidth, 18);
+        // Live value label
         ctx.fillStyle = "#00D9A5";
+        ctx.font = "bold 11px monospace";
         ctx.textAlign = "right";
-        ctx.fillText(labelText, cx - 12, cy - 8);
+        ctx.fillText(`${last.e2eLatencyMs}ms`, cx - 8, cy - 8);
       } else {
         ctx.fillStyle = "rgba(255, 255, 255, 0.3)";
         ctx.font = "12px monospace";
@@ -246,7 +212,7 @@ export const LatencyChart = memo(function LatencyChart({ avgBlockTime }: Latency
           <span className="flex items-center gap-1.5">
             <span className="live-badge" style={{ width: 6, height: 6 }} />
             <span style={{ color: "#00D9A5", fontWeight: "bold" }}>
-              {currentLatency}ms
+              {dataPoints.length > 0 ? dataPoints[dataPoints.length - 1].e2eLatencyMs : currentLatency}ms
             </span>
           </span>
         </div>
