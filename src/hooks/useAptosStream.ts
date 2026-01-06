@@ -403,7 +403,8 @@ export function useAptosStream() {
         if (lastBlockRef.current === 0) {
           // Fetch smaller initial batch (5 blocks) to reduce API calls
           const heights = Array.from({ length: 5 }, (_, i) => currentHeight - i);
-          const blocks = await Promise.all(heights.map(h => fetchBlock(apiBase, network, h)));
+          try {
+            const blocks = await Promise.all(heights.map(h => fetchBlock(apiBase, network, h)));
 
           for (let i = 0; i < blocks.length; i++) {
             const block = blocks[i];
@@ -435,6 +436,9 @@ export function useAptosStream() {
           }
 
           lastBlockRef.current = currentHeight;
+          } catch (blockFetchError) {
+            console.error(`[AptosStream] Error fetching initial blocks:`, blockFetchError);
+          }
         }
 
         // Fetch all new blocks since last poll (limit to 15 to handle ~100ms block times)

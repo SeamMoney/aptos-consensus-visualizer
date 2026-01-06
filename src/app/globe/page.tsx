@@ -8,7 +8,13 @@ export default function GlobePage() {
   const { network, setNetwork } = useNetwork();
 
   return (
-    <main className="h-screen h-[100dvh] bg-black flex flex-col overflow-hidden">
+    <main
+      className="h-screen bg-black flex flex-col overflow-hidden"
+      style={{
+        height: '100dvh',
+        paddingBottom: 'env(safe-area-inset-bottom, 0px)',
+      }}
+    >
       {/* Header bar */}
       <header className="flex-shrink-0 flex items-center justify-between px-4 py-3 bg-black/80 backdrop-blur-sm border-b border-white/10 z-10">
         <Link

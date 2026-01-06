@@ -1064,14 +1064,14 @@ function Loader() {
 
 // Activity feed overlay - fixed height rows to prevent shifting
 function ActivityFeed({ items, fullscreen = false }: { items: ActivityFeedItem[]; fullscreen?: boolean }) {
-  // Always show 6 slots to prevent height changes
-  const slots = 6;
+  // Show 5 slots on mobile fullscreen to fit better, 6 otherwise
+  const slots = fullscreen ? 5 : 6;
   const rowHeight = fullscreen ? 24 : 18; // Fixed row height in pixels
   const headerHeight = fullscreen ? 32 : 24;
 
   return (
     <div className={`absolute pointer-events-none ${
-      fullscreen ? 'bottom-16 right-4 w-72' : 'bottom-10 right-2 w-56'
+      fullscreen ? 'bottom-8 right-4 w-72' : 'bottom-10 right-2 w-56'
     }`}>
       {/* Feed container with subtle glass effect */}
       <div className="bg-black/70 backdrop-blur-sm rounded-lg border border-white/10 overflow-hidden">
@@ -1343,7 +1343,7 @@ export const GlobeVisualizer = memo(function GlobeVisualizer({ fullscreen = fals
       </div>
 
       {/* Bottom bar - legend + instructions combined */}
-      <div className={`absolute left-0 right-0 pointer-events-none ${fullscreen ? 'bottom-4 px-4' : 'bottom-3 px-3'}`}>
+      <div className={`absolute left-0 right-0 pointer-events-none ${fullscreen ? 'bottom-2 px-4' : 'bottom-3 px-3'}`}>
         <div className={`flex items-center justify-between ${fullscreen ? 'text-xs' : 'text-[10px]'}`}>
           {/* Legend - left side */}
           <div className="flex items-center gap-4 text-gray-400">
