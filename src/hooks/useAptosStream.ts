@@ -244,7 +244,7 @@ export function useAptosStream() {
   const lastValidatorFetchRef = useRef<number>(0);
   const recentProposersRef = useRef<string[]>([]);
 
-  const defaultPollMs = parseInt(process.env.NEXT_PUBLIC_APTOS_POLL_MS || "300");
+  const defaultPollMs = parseInt(process.env.NEXT_PUBLIC_APTOS_POLL_MS || "500");
 
   // Error recovery refs
   const errorCountRef = useRef<number>(0);
@@ -441,9 +441,9 @@ export function useAptosStream() {
           }
         }
 
-        // Fetch all new blocks since last poll (limit to 15 to handle ~100ms block times)
+        // Fetch new blocks since last poll (limit to 5 to reduce API load)
         if (currentHeight > lastBlockRef.current) {
-          const newCount = Math.min(currentHeight - lastBlockRef.current, 15);
+          const newCount = Math.min(currentHeight - lastBlockRef.current, 5);
           const heights = Array.from({ length: newCount }, (_, i) => currentHeight - i);
           const blocks = await Promise.all(heights.map(h => fetchBlock(apiBase, network, h)));
 
